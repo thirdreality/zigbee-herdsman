@@ -1,0 +1,364 @@
+import {describe, expect, it} from 'vitest';
+import {
+    int8s,
+    int16s,
+    int32s,
+    int64s,
+    uint8_t,
+    uint16_t,
+    uint24_t,
+    uint32_t,
+    uint64_t,
+    LVBytes,
+    Bytes,
+    Fixed16Bytes,
+    WordList,
+    int_t,
+} from '../../../../src/adapter/blz/driver/types/basic';
+import {
+    BlzNodeId,
+    BlzEUI64,
+    Bool,
+    BlzValueId,
+    BlzStatus,
+    BlzNodeType,
+    BlzOutgoingMessageType,
+    BlzApsOption,
+    BlzZDOCmd,
+} from '../../../../src/adapter/blz/driver/types/named';
+
+describe('BLZ Types', () => {
+    describe('Basic Integer Types', () => {
+        describe('uint8_t', () => {
+            it('should serialize 8-bit unsigned integer', () => {
+                const result = uint8_t.serialize(uint8_t, 255);
+                expect(result).toEqual(Buffer.from([0xFF]));
+            });
+
+            it('should serialize zero', () => {
+                const result = uint8_t.serialize(uint8_t, 0);
+                expect(result).toEqual(Buffer.from([0x00]));
+            });
+
+            it('should deserialize 8-bit unsigned integer', () => {
+                const [value, remaining] = uint8_t.deserialize(uint8_t, Buffer.from([0xAB, 0xCD]));
+                expect(value).toBe(0xAB);
+                expect(remaining).toEqual(Buffer.from([0xCD]));
+            });
+
+            it('should throw on buffer too small', () => {
+                expect(() => uint8_t.deserialize(uint8_t, Buffer.from([]))).toThrow(RangeError);
+            });
+        });
+
+        describe('uint16_t', () => {
+            it('should serialize 16-bit unsigned integer in little-endian', () => {
+                const result = uint16_t.serialize(uint16_t, 0x1234);
+                expect(result).toEqual(Buffer.from([0x34, 0x12]));
+            });
+
+            it('should deserialize 16-bit unsigned integer', () => {
+                const [value, remaining] = uint16_t.deserialize(uint16_t, Buffer.from([0x34, 0x12, 0xAB]));
+                expect(value).toBe(0x1234);
+                expect(remaining).toEqual(Buffer.from([0xAB]));
+            });
+
+            it('should handle max value', () => {
+                const result = uint16_t.serialize(uint16_t, 0xFFFF);
+                expect(result).toEqual(Buffer.from([0xFF, 0xFF]));
+            });
+        });
+
+        describe('uint24_t', () => {
+            it('should serialize 24-bit unsigned integer', () => {
+                const result = uint24_t.serialize(uint24_t, 0x123456);
+                expect(result).toEqual(Buffer.from([0x56, 0x34, 0x12]));
+            });
+
+            it('should deserialize 24-bit unsigned integer', () => {
+                const [value] = uint24_t.deserialize(uint24_t, Buffer.from([0x56, 0x34, 0x12]));
+                expect(value).toBe(0x123456);
+            });
+        });
+
+        describe('uint32_t', () => {
+            it('should serialize 32-bit unsigned integer', () => {
+                const result = uint32_t.serialize(uint32_t, 0x12345678);
+                expect(result).toEqual(Buffer.from([0x78, 0x56, 0x34, 0x12]));
+            });
+
+            it('should deserialize 32-bit unsigned integer', () => {
+                const [value] = uint32_t.deserialize(uint32_t, Buffer.from([0x78, 0x56, 0x34, 0x12]));
+                expect(value).toBe(0x12345678);
+            });
+        });
+
+        describe('uint64_t', () => {
+            it('should serialize 64-bit unsigned integer', () => {
+                const result = uint64_t.serialize(uint64_t, BigInt('0x0102030405060708'));
+                expect(result.length).toBe(8);
+                expect(result[0]).toBe(0x08);
+                expect(result[7]).toBe(0x01);
+            });
+
+            it('should deserialize 64-bit unsigned integer', () => {
+                const buffer = Buffer.from([0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01]);
+                const [value] = uint64_t.deserialize(uint64_t, buffer);
+                expect(value).toBe(BigInt('0x0102030405060708'));
+            });
+
+            it('should handle conversion from number', () => {
+                const result = uint64_t.serialize(uint64_t, 12345678);
+                expect(result.length).toBe(8);
+            });
+        });
+
+        describe('Signed integers', () => {
+            it('should serialize signed 8-bit integer', () => {
+                const result = int8s.serialize(int8s, -1);
+                expect(result).toEqual(Buffer.from([0xFF]));
+            });
+
+            it('should deserialize signed 8-bit integer', () => {
+                const [value] = int8s.deserialize(int8s, Buffer.from([0xFF]));
+                expect(value).toBe(-1);
+            });
+
+            it('should serialize signed 16-bit integer', () => {
+                const result = int16s.serialize(int16s, -1000);
+                expect(result.length).toBe(2);
+            });
+
+            it('should deserialize signed 16-bit integer', () => {
+                const buffer = int16s.serialize(int16s, -1000);
+                const [value] = int16s.deserialize(int16s, buffer);
+                expect(value).toBe(-1000);
+            });
+
+            it('should serialize signed 32-bit integer', () => {
+                const result = int32s.serialize(int32s, -100000);
+                expect(result.length).toBe(4);
+            });
+
+            it('should serialize signed 64-bit integer', () => {
+                const result = int64s.serialize(int64s, BigInt(-1));
+                expect(result.length).toBe(8);
+            });
+        });
+    });
+
+    describe('Buffer from value', () => {
+        it('should serialize from Buffer input', () => {
+            const buffer = Buffer.from([0x12, 0x34]);
+            const result = uint16_t.serialize(uint16_t, buffer);
+            expect(result.length).toBe(2);
+        });
+
+        it('should throw for invalid value type', () => {
+            expect(() => uint8_t.serialize(uint8_t, 'invalid' as any)).toThrow(TypeError);
+        });
+    });
+
+    describe('LVBytes', () => {
+        it('should serialize length-prefixed bytes from array', () => {
+            const result = LVBytes.serialize(LVBytes, [0x01, 0x02, 0x03]);
+            expect(result).toEqual(Buffer.from([0x03, 0x01, 0x02, 0x03]));
+        });
+
+        it('should serialize length-prefixed bytes from Buffer', () => {
+            const result = LVBytes.serialize(LVBytes, Buffer.from([0xAB, 0xCD]));
+            expect(result).toEqual(Buffer.from([0x02, 0xAB, 0xCD]));
+        });
+
+        it('should deserialize length-prefixed bytes', () => {
+            const [value, remaining] = LVBytes.deserialize(LVBytes, Buffer.from([0x02, 0xAB, 0xCD, 0xEF]));
+            expect(value).toEqual(Buffer.from([0xAB, 0xCD]));
+            expect(remaining).toEqual(Buffer.from([0xEF]));
+        });
+
+        it('should handle empty bytes', () => {
+            const result = LVBytes.serialize(LVBytes, []);
+            expect(result).toEqual(Buffer.from([0x00]));
+        });
+    });
+
+    describe('Bytes', () => {
+        it('should serialize bytes', () => {
+            const result = Bytes.serialize(Bytes, [0x01, 0x02, 0x03]);
+            expect(result).toEqual(Buffer.from([0x01, 0x02, 0x03]));
+        });
+
+        it('should deserialize remaining bytes', () => {
+            const [value] = Bytes.deserialize(Bytes, Buffer.from([0x01, 0x02, 0x03]));
+            expect(value).toEqual(Buffer.from([0x01, 0x02, 0x03]));
+        });
+    });
+
+    describe('Fixed16Bytes', () => {
+        it('should serialize exactly 16 bytes', () => {
+            const input = Buffer.alloc(16, 0xAB);
+            const result = Fixed16Bytes.serialize(Fixed16Bytes, input);
+            expect(result.length).toBe(16);
+            expect(result).toEqual(input);
+        });
+
+        it('should throw for wrong size buffer', () => {
+            const input = Buffer.alloc(10, 0xAB);
+            expect(() => Fixed16Bytes.serialize(Fixed16Bytes, input)).toThrow();
+        });
+
+        it('should deserialize exactly 16 bytes', () => {
+            const input = Buffer.alloc(20, 0xAB);
+            const [value, remaining] = Fixed16Bytes.deserialize(Fixed16Bytes, input);
+            expect(value.length).toBe(16);
+            expect(remaining.length).toBe(4);
+        });
+
+        it('should throw if buffer too small', () => {
+            const input = Buffer.alloc(10, 0xAB);
+            expect(() => Fixed16Bytes.deserialize(Fixed16Bytes, input)).toThrow(RangeError);
+        });
+    });
+
+    describe('WordList', () => {
+        it('should serialize list of uint16', () => {
+            const result = WordList.serialize(WordList, [0x1234, 0x5678]);
+            expect(result).toEqual(Buffer.from([0x34, 0x12, 0x78, 0x56]));
+        });
+    });
+
+    describe('int_t valueToName', () => {
+        it('should convert value to name', () => {
+            const name = int_t.valueToName(BlzStatus, 0);
+            expect(name).toBe('BlzStatus.SUCCESS');
+        });
+
+        it('should return empty string for unknown value', () => {
+            const name = int_t.valueToName(BlzStatus, 999);
+            expect(name).toBe('');
+        });
+    });
+
+    describe('Named Types', () => {
+        describe('BlzNodeId', () => {
+            it('should be a uint16_t', () => {
+                const result = BlzNodeId.serialize(BlzNodeId, 0x1234);
+                expect(result.length).toBe(2);
+            });
+        });
+
+        describe('BlzEUI64', () => {
+            it('should create from hex string', () => {
+                const eui = new BlzEUI64('0102030405060708');
+                expect(eui.toString()).toBe('0102030405060708');
+            });
+
+            it('should create from hex string with 0x prefix', () => {
+                const eui = new BlzEUI64('0x0102030405060708');
+                expect(eui.toString()).toBe('0102030405060708');
+            });
+
+            it('should create from array', () => {
+                const eui = new BlzEUI64([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
+                expect(eui.toString()).toBe('0102030405060708');
+            });
+
+            it('should throw for invalid string length', () => {
+                expect(() => new BlzEUI64('0102030405')).toThrow('Incorrect value passed');
+            });
+
+            it('should throw for invalid array length', () => {
+                expect(() => new BlzEUI64([0x01, 0x02])).toThrow('Incorrect value passed');
+            });
+
+            it('should serialize EUI64', () => {
+                const eui = new BlzEUI64('0102030405060708');
+                const result = BlzEUI64.serialize(BlzEUI64, eui);
+                expect(result.length).toBe(8);
+            });
+
+            it('should serialize from array', () => {
+                const result = BlzEUI64.serialize(BlzEUI64, [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
+                expect(result.length).toBe(8);
+            });
+
+            it('should deserialize and reverse bytes', () => {
+                const buffer = Buffer.from([0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0xAB]);
+                const [value, remaining] = BlzEUI64.deserialize(BlzEUI64, buffer);
+                expect(value).toEqual(Buffer.from([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]));
+                expect(remaining).toEqual(Buffer.from([0xAB]));
+            });
+        });
+
+        describe('Bool', () => {
+            it('should have true and false values', () => {
+                expect(Bool.true).toBe(1);
+                expect(Bool.false).toBe(0);
+            });
+
+            it('should serialize as uint8', () => {
+                const result = Bool.serialize(Bool, 1);
+                expect(result).toEqual(Buffer.from([0x01]));
+            });
+        });
+
+        describe('BlzValueId', () => {
+            it('should have defined value IDs', () => {
+                expect(BlzValueId.BLZ_VALUE_ID_BLZ_VERSION).toBe(0x00);
+                expect(BlzValueId.BLZ_VALUE_ID_STACK_VERSION).toBe(0x01);
+                expect(BlzValueId.BLZ_VALUE_ID_MAC_ADDRESS).toBe(0x20);
+            });
+        });
+
+        describe('BlzStatus', () => {
+            it('should have SUCCESS and GENERAL_ERROR', () => {
+                expect(BlzStatus.SUCCESS).toBe(0x00);
+                expect(BlzStatus.GENERAL_ERROR).toBe(0x01);
+            });
+        });
+
+        describe('BlzNodeType', () => {
+            it('should have node types', () => {
+                expect(BlzNodeType.COORDINATOR).toBe(0x00);
+                expect(BlzNodeType.ROUTER).toBe(0x01);
+                expect(BlzNodeType.END_DEVICE).toBe(0x02);
+            });
+        });
+
+        describe('BlzOutgoingMessageType', () => {
+            it('should have message types', () => {
+                expect(BlzOutgoingMessageType.BLZ_MSG_TYPE_UNICAST).toBe(0x01);
+                expect(BlzOutgoingMessageType.BLZ_MSG_TYPE_MULTICAST).toBe(0x02);
+                expect(BlzOutgoingMessageType.BLZ_MSG_TYPE_BROADCAST).toBe(0x03);
+            });
+        });
+
+        describe('BlzApsOption', () => {
+            it('should have APS options', () => {
+                expect(BlzApsOption.ZB_APS_TX_OPTIONS_NONE).toBe(0x00);
+                expect(BlzApsOption.ZB_APS_TX_OPTIONS_SEC_EN_TRANS).toBe(0x01);
+                expect(BlzApsOption.ZB_APS_TX_OPTIONS_ACK_TRANS).toBe(0x04);
+            });
+        });
+
+        describe('BlzZDOCmd', () => {
+            it('should have ZDO request commands', () => {
+                expect(BlzZDOCmd.NWK_addr_req).toBe(0x0000);
+                expect(BlzZDOCmd.Node_Desc_req).toBe(0x0002);
+                expect(BlzZDOCmd.Bind_req).toBe(0x0021);
+            });
+
+            it('should have ZDO response commands', () => {
+                expect(BlzZDOCmd.NWK_addr_rsp).toBe(0x8000);
+                expect(BlzZDOCmd.Node_Desc_rsp).toBe(0x8002);
+                expect(BlzZDOCmd.Bind_rsp).toBe(0x8021);
+            });
+
+            it('should have response IDs = request IDs + 0x8000', () => {
+                expect(BlzZDOCmd.NWK_addr_rsp - BlzZDOCmd.NWK_addr_req).toBe(0x8000);
+                expect(BlzZDOCmd.Node_Desc_rsp - BlzZDOCmd.Node_Desc_req).toBe(0x8000);
+                expect(BlzZDOCmd.Bind_rsp - BlzZDOCmd.Bind_req).toBe(0x8000);
+            });
+        });
+    });
+});

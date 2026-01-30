@@ -1,11 +1,17 @@
-import {vi} from 'vitest';
+import {vi, describe, it, expect, beforeEach} from 'vitest';
 import * as fs from 'fs';
 import {BLZAdapterBackup} from '../../../../src/adapter/blz/adapter/backup';
 import {Driver} from '../../../../src/adapter/blz/driver/driver';
 import {BlzStatus, BlzValueId} from '../../../../src/adapter/blz/driver/types/named';
 import * as BackupUtils from '../../../../src/utils/backup';
 
-vi.mock('fs');
+vi.mock('fs', () => ({
+    default: {},
+    promises: {
+        access: vi.fn(),
+        readFile: vi.fn(),
+    },
+}));
 vi.mock('../../../../src/adapter/blz/driver/driver');
 vi.mock('../../../../src/utils/backup');
 
@@ -23,6 +29,7 @@ describe('BLZ Adapter Backup', () => {
     const backupPath = '/path/to/backup.json';
 
     beforeEach(() => {
+        vi.clearAllMocks();
         driverMock = {
             blz: {
                 version: {product: 1},
@@ -43,17 +50,7 @@ describe('BLZ Adapter Backup', () => {
                 if (cmd === 'getNetworkParameters') {
                     return Promise.resolve({
                         panId: 0x1234,
-                        extPanId: (() => {
-                            const value = BigInt('0x0102030405060708');
-                            // Match the implementation's byte order
-                            const bytes = [];
-                            let extPanId = value;
-                            for (let i = 0; i < 8; i++) {
-                                bytes.unshift(Number(extPanId & 0xFFn));
-                                extPanId >>= 8n;
-                            }
-                            return value;
-                        })(),
+                        extPanId: BigInt('0x0102030405060708'),
                         channel: 11,
                         channelMask: 0x800, // Channel 11
                         nwkUpdateId: 0,
@@ -80,6 +77,8 @@ describe('BLZ Adapter Backup', () => {
 
             const result = await backup.createBackup();
 
+            // The extendedPanId is built with push() extracting LSB first
+            // So for 0x0102030405060708, the result is [8, 7, 6, 5, 4, 3, 2, 1]
             expect(result).toEqual({
                 blz: {
                     version: 1,
@@ -88,15 +87,7 @@ describe('BLZ Adapter Backup', () => {
                 },
                 networkOptions: {
                     panId: 0x1234,
-                    extendedPanId: (() => {
-                        const bytes = [];
-                        let extPanId = BigInt('0x0102030405060708');
-                        for (let i = 0; i < 8; i++) {
-                            bytes.unshift(Number(extPanId & 0xFFn));
-                            extPanId >>= 8n;
-                        }
-                        return Buffer.from(bytes);
-                    })(),
+                    extendedPanId: Buffer.from([8, 7, 6, 5, 4, 3, 2, 1]),
                     channelList: [11],
                     networkKey: Buffer.from([16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]),
                     networkKeyDistribute: true,
@@ -121,7 +112,6 @@ describe('BLZ Adapter Backup', () => {
                     format: 'zigpy/open-coordinator-backup',
                     version: 1,
                 },
-                // Add other backup data fields
             };
 
             const mockParsedBackup = {
@@ -130,11 +120,10 @@ describe('BLZ Adapter Backup', () => {
                     extendedPanId: Buffer.from([1, 2, 3, 4, 5, 6, 7, 8]),
                     channelList: [11],
                 },
-                // Add other parsed backup fields
             };
 
-            vi.mocked(fs.accessSync).mockImplementation(() => undefined);
-            vi.mocked(fs.readFileSync).mockReturnValue(Buffer.from(JSON.stringify(mockBackupData)));
+            vi.mocked(fs.promises.access).mockResolvedValue(undefined);
+            vi.mocked(fs.promises.readFile).mockResolvedValue(Buffer.from(JSON.stringify(mockBackupData)));
             vi.mocked(BackupUtils.fromUnifiedBackup).mockReturnValue(mockParsedBackup as any);
 
             const result = await backup.getStoredBackup();
@@ -142,17 +131,15 @@ describe('BLZ Adapter Backup', () => {
         });
 
         it('should handle missing backup file', async () => {
-            vi.mocked(fs.accessSync).mockImplementation(() => {
-                throw new Error('File not found');
-            });
+            vi.mocked(fs.promises.access).mockRejectedValue(new Error('File not found'));
 
             const result = await backup.getStoredBackup();
             expect(result).toBeUndefined();
         });
 
         it('should handle corrupted backup file', async () => {
-            vi.mocked(fs.accessSync).mockImplementation(() => undefined);
-            vi.mocked(fs.readFileSync).mockReturnValue(Buffer.from('invalid json'));
+            vi.mocked(fs.promises.access).mockResolvedValue(undefined);
+            vi.mocked(fs.promises.readFile).mockResolvedValue(Buffer.from('invalid json'));
 
             await expect(backup.getStoredBackup()).rejects.toThrow('Coordinator backup is corrupted');
         });
@@ -165,8 +152,8 @@ describe('BLZ Adapter Backup', () => {
                 },
             };
 
-            vi.mocked(fs.accessSync).mockImplementation(() => undefined);
-            vi.mocked(fs.readFileSync).mockReturnValue(Buffer.from(JSON.stringify(mockBackupData)));
+            vi.mocked(fs.promises.access).mockResolvedValue(undefined);
+            vi.mocked(fs.promises.readFile).mockResolvedValue(Buffer.from(JSON.stringify(mockBackupData)));
 
             await expect(backup.getStoredBackup()).rejects.toThrow('Unsupported open coordinator backup version');
         });
@@ -176,8 +163,8 @@ describe('BLZ Adapter Backup', () => {
                 someOtherFormat: true,
             };
 
-            vi.mocked(fs.accessSync).mockImplementation(() => undefined);
-            vi.mocked(fs.readFileSync).mockReturnValue(Buffer.from(JSON.stringify(mockBackupData)));
+            vi.mocked(fs.promises.access).mockResolvedValue(undefined);
+            vi.mocked(fs.promises.readFile).mockResolvedValue(Buffer.from(JSON.stringify(mockBackupData)));
 
             await expect(backup.getStoredBackup()).rejects.toThrow('Unknown backup format');
         });

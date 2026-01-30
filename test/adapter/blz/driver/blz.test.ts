@@ -1,4 +1,4 @@
-import {vi} from 'vitest';
+import {vi, describe, it, expect, beforeEach, afterEach} from 'vitest';
 import {Blz, BLZFrameData} from '../../../../src/adapter/blz/driver/blz';
 import {SerialDriver} from '../../../../src/adapter/blz/driver/uart';
 import {BlzStatus, BlzValueId} from '../../../../src/adapter/blz/driver/types/named';
