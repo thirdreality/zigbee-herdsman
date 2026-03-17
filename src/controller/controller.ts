@@ -1,7 +1,6 @@
 import assert from "node:assert";
 import events from "node:events";
 import fs from "node:fs";
-import mixinDeep from "mixin-deep";
 import {Adapter, type Events as AdapterEvents, type TsType as AdapterTsType} from "../adapter";
 import type {ZclPayload} from "../adapter/events";
 import {BackupUtils, wait} from "../utils";
@@ -42,18 +41,6 @@ interface Options {
      */
     acceptJoiningDeviceHandler: (ieeeAddr: string) => Promise<boolean>;
 }
-
-const DefaultOptions: Pick<Options, "network" | "serialPort" | "adapter"> = {
-    network: {
-        networkKeyDistribute: false,
-        networkKey: [0x01, 0x03, 0x05, 0x07, 0x09, 0x0b, 0x0d, 0x0f, 0x00, 0x02, 0x04, 0x06, 0x08, 0x0a, 0x0c, 0x0d],
-        panID: 0x1a62,
-        extendedPanID: [0xdd, 0xdd, 0xdd, 0xdd, 0xdd, 0xdd, 0xdd, 0xdd],
-        channelList: [11],
-    },
-    serialPort: {},
-    adapter: {disableLED: false},
-};
 
 export interface ControllerEventMap {
     message: [data: Events.MessagePayload];
@@ -96,7 +83,20 @@ export class Controller extends events.EventEmitter<ControllerEventMap> {
         super();
         this.stopping = false;
         this.adapterDisconnected = true; // set false after adapter.start() is successfully called
-        this.options = mixinDeep(JSON.parse(JSON.stringify(DefaultOptions)), options);
+        const {network: networkOpts, serialPort: serialPortOpts, adapter: adapterOpts, ...restOpts} = options;
+        this.options = {
+            network: {
+                networkKeyDistribute: false,
+                networkKey: [0x01, 0x03, 0x05, 0x07, 0x09, 0x0b, 0x0d, 0x0f, 0x00, 0x02, 0x04, 0x06, 0x08, 0x0a, 0x0c, 0x0d],
+                extendedPanID: [0xdd, 0xdd, 0xdd, 0xdd, 0xdd, 0xdd, 0xdd, 0xdd],
+                ...networkOpts,
+            },
+            serialPort: {...serialPortOpts},
+            adapter: {
+                ...adapterOpts,
+            },
+            ...restOpts,
+        };
         this.unknownDevices = new Set();
 
         // Validate options
@@ -130,7 +130,7 @@ export class Controller extends events.EventEmitter<ControllerEventMap> {
     /**
      * Start the Herdsman controller
      */
-    public async start(): Promise<AdapterTsType.StartResult> {
+    public async start(abortSignal?: AbortSignal): Promise<AdapterTsType.StartResult> {
         // Database (create end inject)
         this.database = Database.open(this.options.databasePath);
         Entity.injectDatabase(this.database);
@@ -138,11 +138,15 @@ export class Controller extends events.EventEmitter<ControllerEventMap> {
         // Adapter (create and inject)
         this.adapter = await Adapter.create(this.options.network, this.options.serialPort, this.options.backupPath, this.options.adapter);
 
+        abortSignal?.throwIfAborted();
+
         const stringifiedOptions = JSON.stringify(this.options).replaceAll(JSON.stringify(this.options.network.networkKey), '"HIDDEN"');
         logger.debug(`Starting with options '${stringifiedOptions}'`, NS);
         const startResult = await this.adapter.start();
         logger.debug(`Started with result '${startResult}'`, NS);
         this.adapterDisconnected = false;
+
+        abortSignal?.throwIfAborted();
 
         // Check if we have to change the channel, only do this when adapter `resumed` because:
         // - `getNetworkParameters` might be return wrong info because it needs to propogate after backup restore
@@ -156,6 +160,8 @@ export class Controller extends events.EventEmitter<ControllerEventMap> {
             if (configuredChannel !== adapterChannel) {
                 logger.info(`Configured channel '${configuredChannel}' does not match adapter channel '${adapterChannel}', changing channel`, NS);
                 await this.changeChannel(adapterChannel, configuredChannel, nwkUpdateID);
+
+                abortSignal?.throwIfAborted();
             }
         }
 
@@ -180,19 +186,17 @@ export class Controller extends events.EventEmitter<ControllerEventMap> {
                 fs.copyFileSync(this.options.databasePath, this.options.databaseBackupPath);
             }
 
-            logger.debug("Clearing database...", NS);
-            for (const group of Group.allIterator()) {
-                group.removeFromDatabase();
-            }
-
-            for (const device of Device.allIterator()) {
-                device.removeFromDatabase();
-            }
+            this.database.clear();
+            Group.resetCache();
             Device.resetCache();
+
+            abortSignal?.throwIfAborted();
         }
 
         if (startResult === "reset" || (this.options.backupPath && !fs.existsSync(this.options.backupPath))) {
             await this.backup();
+
+            abortSignal?.throwIfAborted();
         }
 
         // Add coordinator to the database if it is not there yet.
@@ -214,8 +218,12 @@ export class Controller extends events.EventEmitter<ControllerEventMap> {
 
             await coordinator.updateActiveEndpoints();
 
+            abortSignal?.throwIfAborted();
+
             for (const endpoint of coordinator.endpoints) {
                 await endpoint.updateSimpleDescriptor();
+
+                abortSignal?.throwIfAborted();
             }
 
             coordinator.save();
@@ -991,7 +999,7 @@ export class Controller extends events.EventEmitter<ControllerEventMap> {
         }
 
         if (!device) {
-            if (typeof payload.address === "number") {
+            if (typeof payload.address === "number" && !Device.isDeletedByNetworkAddress(payload.address)) {
                 device = await this.identifyUnknownDevice(payload.address);
             }
 
@@ -1011,7 +1019,7 @@ export class Controller extends events.EventEmitter<ControllerEventMap> {
         device.updateLastSeen();
 
         //no implicit checkin for genPollCtrl data because it might interfere with the explicit checkin
-        if (!frame?.isCluster("genPollCtrl")) {
+        if (frame?.cluster.name !== "genPollCtrl") {
             device.implicitCheckin();
         }
 
@@ -1085,7 +1093,7 @@ export class Controller extends events.EventEmitter<ControllerEventMap> {
 
                 if (type === "readResponse" || type === "attributeReport") {
                     // devices report attributes through readRsp or attributeReport
-                    if (frame.isCluster("genBasic")) {
+                    if (frame.cluster.name === "genBasic") {
                         device.updateGenBasic(data as TPartialClusterAttributes<"genBasic">);
                     }
 

@@ -1,5 +1,5 @@
 {
-    "$schema": "https://biomejs.dev/schemas/2.3.8/schema.json",
+    "$schema": "https://biomejs.dev/schemas/2.4.5/schema.json",
     "vcs": {
         "enabled": true,
         "clientKind": "git",
@@ -12,7 +12,7 @@
         "bracketSpacing": false
     },
     "files": {
-        "includes": ["**", "!package.json"]
+        "includes": ["**", "!package.json", "!!**/dist", "!!**/coverage"]
     },
     "linter": {
         "includes": ["**", "!src/adapter/ezsp/driver/types/**/*"],
@@ -76,6 +76,11 @@
             "suspicious": {
                 "noConstEnum": "off",
                 "useAwait": "error"
+            },
+            "nursery": {
+                "useExhaustiveSwitchCases": "error",
+                "noFloatingPromises": "error",
+                "noMisusedPromises": "error"
             }
         }
     },

@@ -1,5 +1,6 @@
 import type {
     TClusterAttributes,
+    TClusterCommandPayload,
     TClusterCommandResponses,
     TClusterCommands,
     TClusterPayload,
@@ -51,6 +52,84 @@ export interface GreenPowerDeviceJoinedPayload {
     networkAddress: number;
     securityKey?: Buffer;
 }
+
+// #region OTA
+export interface OtaSource {
+    url?: string;
+    downgrade?: boolean;
+}
+
+export interface OtaDataSettings {
+    requestTimeout: number;
+    responseDelay: number;
+    baseSize: number;
+}
+
+export interface OtaUpdateAvailableResult {
+    /** based on `source.downgrade` */
+    available: boolean;
+    current: TClusterCommandPayload<"genOta", "queryNextImageRequest">;
+    availableMeta?: ZigbeeOtaImageMeta;
+}
+
+export interface OtaImageHeader {
+    otaUpgradeFileIdentifier: number;
+    otaHeaderVersion: number;
+    otaHeaderLength: number;
+    otaHeaderFieldControl: number;
+    manufacturerCode: number;
+    imageType: number;
+    fileVersion: number;
+    zigbeeStackVersion: number;
+    otaHeaderString: string;
+    totalImageSize: number;
+    securityCredentialVersion?: number;
+    upgradeFileDestination?: Buffer;
+    minimumHardwareVersion?: number;
+    maximumHardwareVersion?: number;
+}
+
+export interface OtaImageElement {
+    tagId: number;
+    length: number;
+    data: Buffer;
+}
+
+export interface OtaImage {
+    header: OtaImageHeader;
+    elements: OtaImageElement[];
+    raw: Buffer;
+}
+
+export interface OtaImageMeta {
+    fileVersion: OtaImageHeader["fileVersion"];
+    fileSize?: OtaImageHeader["totalImageSize"];
+    url: string;
+    force?: boolean;
+    sha512?: string;
+    otaHeaderString?: OtaImageHeader["otaHeaderString"];
+    hardwareVersionMin?: OtaImageHeader["minimumHardwareVersion"];
+    hardwareVersionMax?: OtaImageHeader["maximumHardwareVersion"];
+}
+
+export interface ZigbeeOtaImageMeta
+    extends Omit<TClusterCommandPayload<"genOta", "queryNextImageRequest">, "fieldControl" | "hardwareVersion">,
+        OtaImageMeta {
+    fileName: string;
+    modelId?: string;
+    manufacturerName?: string[];
+    minFileVersion?: OtaImageHeader["fileVersion"];
+    maxFileVersion?: OtaImageHeader["fileVersion"];
+    originalUrl?: string;
+    releaseNotes?: string;
+}
+
+export type OtaExtraMetas = Pick<ZigbeeOtaImageMeta, "modelId" | "otaHeaderString" | "hardwareVersionMin" | "hardwareVersionMax"> & {
+    manufacturerName?: string;
+    suppressElementImageParseFailure?: boolean;
+};
+
+// #endregion
 
 export interface RawPayload {
     ieeeAddress?: string;
@@ -108,156 +187,145 @@ export type RawClusterAttributes = Record<number, RawClusterAttribute>;
 //
 // where `raw` represents the type used for full manual input (usually using ID)
 
-export type ClusterOrRawAttributeKeys<
-    Cl extends string | number,
-    Custom extends TCustomCluster | undefined = undefined,
-> = TClusterAttributes<Cl> extends never
-    ? Custom extends TCustomCluster
-        ? Custom["attributes"] extends never
-            ? number[]
-            : (keyof Custom["attributes"] | number)[]
-        : number[]
-    : Cl extends keyof TClusters
-      ? Custom extends TCustomCluster
-          ? Custom["attributes"] extends never
-              ? // don't use `TClusterAttributeKeys<Cl>` as that allows "symbol"
-                (keyof TClusters[Cl]["attributes"] | number)[]
-              : (keyof Custom["attributes"] | keyof TClusters[Cl]["attributes"] | number)[]
-          : (keyof TClusters[Cl]["attributes"] | number)[]
-      : Custom extends TCustomCluster
-        ? Custom["attributes"] extends never
-            ? number[]
-            : (keyof Custom["attributes"] | number)[]
-        : number[];
-
-export type ClusterOrRawWriteAttributes<
-    Cl extends string | number,
-    Custom extends TCustomCluster | undefined = undefined,
-> = TClusterAttributes<Cl> extends never
-    ? Custom extends TCustomCluster
-        ? Custom["attributes"] extends never
-            ? RawClusterAttributes
-            : Custom["attributes"] & RawClusterAttributes
-        : RawClusterAttributes
-    : Cl extends keyof TClusters
-      ? (Custom extends TCustomCluster
+export type ClusterOrRawAttributeKeys<Cl extends string | number, Custom extends TCustomCluster | undefined = undefined> =
+    TClusterAttributes<Cl> extends never
+        ? Custom extends TCustomCluster
             ? Custom["attributes"] extends never
-                ? TClusterAttributes<Cl>
-                : Custom["attributes"] & TClusterAttributes<Cl>
-            : TClusterAttributes<Cl>) &
-            RawClusterAttributes
-      : Custom extends TCustomCluster
-        ? Custom["attributes"] extends never
-            ? RawClusterAttributes
-            : Custom["attributes"] & RawClusterAttributes
-        : RawClusterAttributes;
-
-export type PartialClusterOrRawWriteAttributes<
-    Cl extends string | number,
-    Custom extends TCustomCluster | undefined = undefined,
-> = TClusterAttributes<Cl> extends never
-    ? Custom extends TCustomCluster
-        ? Custom["attributes"] extends never
-            ? RawClusterAttributes
-            : Partial<Custom["attributes"]> & RawClusterAttributes
-        : RawClusterAttributes
-    : Cl extends keyof TClusters
-      ? (Custom extends TCustomCluster
+                ? number[]
+                : (keyof Custom["attributes"] | number)[]
+            : number[]
+        : Cl extends keyof TClusters
+          ? Custom extends TCustomCluster
+              ? Custom["attributes"] extends never
+                  ? // don't use `TClusterAttributeKeys<Cl>` as that allows "symbol"
+                    (keyof TClusters[Cl]["attributes"] | number)[]
+                  : (keyof Custom["attributes"] | keyof TClusters[Cl]["attributes"] | number)[]
+              : (keyof TClusters[Cl]["attributes"] | number)[]
+          : Custom extends TCustomCluster
             ? Custom["attributes"] extends never
-                ? TPartialClusterAttributes<Cl>
-                : Partial<Custom["attributes"]> & TPartialClusterAttributes<Cl>
-            : TPartialClusterAttributes<Cl>) &
-            RawClusterAttributes
-      : Custom extends TCustomCluster
-        ? Custom["attributes"] extends never
-            ? RawClusterAttributes
-            : Partial<Custom["attributes"]> & RawClusterAttributes
-        : RawClusterAttributes;
+                ? number[]
+                : (keyof Custom["attributes"] | number)[]
+            : number[];
 
-export type ClusterOrRawAttributes<
-    Cl extends string | number,
-    Custom extends TCustomCluster | undefined = undefined,
-> = TClusterAttributes<Cl> extends never
-    ? Custom extends TCustomCluster
-        ? Custom["attributes"] extends never
-            ? Record<number, unknown>
-            : Custom["attributes"] & Record<number, unknown>
-        : Record<number, unknown>
-    : Cl extends keyof TClusters
-      ? (Custom extends TCustomCluster
+export type ClusterOrRawWriteAttributes<Cl extends string | number, Custom extends TCustomCluster | undefined = undefined> =
+    TClusterAttributes<Cl> extends never
+        ? Custom extends TCustomCluster
             ? Custom["attributes"] extends never
-                ? TClusterAttributes<Cl>
-                : Custom["attributes"] & TClusterAttributes<Cl>
-            : TClusterAttributes<Cl>) &
-            Record<number, unknown>
-      : Custom extends TCustomCluster
-        ? Custom["attributes"] extends never
-            ? Record<number, unknown>
-            : Custom["attributes"] & Record<number, unknown>
-        : Record<number, unknown>;
-
-export type PartialClusterOrRawAttributes<
-    Cl extends string | number,
-    Custom extends TCustomCluster | undefined = undefined,
-> = TClusterAttributes<Cl> extends never
-    ? Custom extends TCustomCluster
-        ? Custom["attributes"] extends never
-            ? Record<number, unknown>
-            : Partial<Custom["attributes"]> & Record<number, unknown>
-        : Record<number, unknown>
-    : Cl extends keyof TClusters
-      ? (Custom extends TCustomCluster
+                ? RawClusterAttributes
+                : Custom["attributes"] & RawClusterAttributes
+            : RawClusterAttributes
+        : Cl extends keyof TClusters
+          ? (Custom extends TCustomCluster
+                ? Custom["attributes"] extends never
+                    ? TClusterAttributes<Cl>
+                    : Custom["attributes"] & TClusterAttributes<Cl>
+                : TClusterAttributes<Cl>) &
+                RawClusterAttributes
+          : Custom extends TCustomCluster
             ? Custom["attributes"] extends never
-                ? TPartialClusterAttributes<Cl>
-                : Partial<Custom["attributes"]> & TPartialClusterAttributes<Cl>
-            : TPartialClusterAttributes<Cl>) &
-            Record<number, unknown>
-      : Custom extends TCustomCluster
-        ? Custom["attributes"] extends never
-            ? Record<number, unknown>
-            : Partial<Custom["attributes"]> & Record<number, unknown>
-        : Record<number, unknown>;
+                ? RawClusterAttributes
+                : Custom["attributes"] & RawClusterAttributes
+            : RawClusterAttributes;
 
-export type ClusterCommandKeys<Cl extends string | number, Custom extends TCustomCluster | undefined = undefined> = TClusterCommands<Cl> extends never
-    ? Custom extends TCustomCluster
-        ? Custom["commands"] extends never
-            ? number[]
-            : (keyof Custom["commands"] | number)[]
-        : number[]
-    : Cl extends keyof TClusters
-      ? Custom extends TCustomCluster
-          ? Custom["commands"] extends never
-              ? // don't use `TClusterCommandKeys<Cl>` as that allows "symbol"
-                (keyof TClusters[Cl]["commands"] | number)[]
-              : (keyof Custom["commands"] | keyof TClusters[Cl]["commands"] | number)[]
-          : (keyof TClusters[Cl]["commands"] | number)[]
-      : Custom extends TCustomCluster
-        ? Custom["commands"] extends never
-            ? number[]
-            : (keyof Custom["commands"] | number)[]
-        : number[];
+export type PartialClusterOrRawWriteAttributes<Cl extends string | number, Custom extends TCustomCluster | undefined = undefined> =
+    TClusterAttributes<Cl> extends never
+        ? Custom extends TCustomCluster
+            ? Custom["attributes"] extends never
+                ? RawClusterAttributes
+                : Partial<Custom["attributes"]> & RawClusterAttributes
+            : RawClusterAttributes
+        : Cl extends keyof TClusters
+          ? (Custom extends TCustomCluster
+                ? Custom["attributes"] extends never
+                    ? TPartialClusterAttributes<Cl>
+                    : Partial<Custom["attributes"]> & TPartialClusterAttributes<Cl>
+                : TPartialClusterAttributes<Cl>) &
+                RawClusterAttributes
+          : Custom extends TCustomCluster
+            ? Custom["attributes"] extends never
+                ? RawClusterAttributes
+                : Partial<Custom["attributes"]> & RawClusterAttributes
+            : RawClusterAttributes;
 
-export type ClusterCommandResponseKeys<
-    Cl extends string | number,
-    Custom extends TCustomCluster | undefined = undefined,
-> = TClusterCommandResponses<Cl> extends never
-    ? Custom extends TCustomCluster
-        ? Custom["commandResponses"] extends never
-            ? number[]
-            : (keyof Custom["commandResponses"] | number)[]
-        : number[]
-    : Cl extends keyof TClusters
-      ? Custom extends TCustomCluster
-          ? Custom["commandResponses"] extends never
-              ? // don't use `TClusterCommandResponseKeys<Cl>` as that allows "symbol"
-                (keyof TClusters[Cl]["commandResponses"] | number)[]
-              : (keyof Custom["commandResponses"] | keyof TClusters[Cl]["commandResponses"] | number)[]
-          : (keyof TClusters[Cl]["commandResponses"] | number)[]
-      : Custom extends TCustomCluster
-        ? Custom["commandResponses"] extends never
-            ? number[]
-            : (keyof Custom["commandResponses"] | number)[]
-        : number[];
+export type ClusterOrRawAttributes<Cl extends string | number, Custom extends TCustomCluster | undefined = undefined> =
+    TClusterAttributes<Cl> extends never
+        ? Custom extends TCustomCluster
+            ? Custom["attributes"] extends never
+                ? Record<number, unknown>
+                : Custom["attributes"] & Record<number, unknown>
+            : Record<number, unknown>
+        : Cl extends keyof TClusters
+          ? (Custom extends TCustomCluster
+                ? Custom["attributes"] extends never
+                    ? TClusterAttributes<Cl>
+                    : Custom["attributes"] & TClusterAttributes<Cl>
+                : TClusterAttributes<Cl>) &
+                Record<number, unknown>
+          : Custom extends TCustomCluster
+            ? Custom["attributes"] extends never
+                ? Record<number, unknown>
+                : Custom["attributes"] & Record<number, unknown>
+            : Record<number, unknown>;
+
+export type PartialClusterOrRawAttributes<Cl extends string | number, Custom extends TCustomCluster | undefined = undefined> =
+    TClusterAttributes<Cl> extends never
+        ? Custom extends TCustomCluster
+            ? Custom["attributes"] extends never
+                ? Record<number, unknown>
+                : Partial<Custom["attributes"]> & Record<number, unknown>
+            : Record<number, unknown>
+        : Cl extends keyof TClusters
+          ? (Custom extends TCustomCluster
+                ? Custom["attributes"] extends never
+                    ? TPartialClusterAttributes<Cl>
+                    : Partial<Custom["attributes"]> & TPartialClusterAttributes<Cl>
+                : TPartialClusterAttributes<Cl>) &
+                Record<number, unknown>
+          : Custom extends TCustomCluster
+            ? Custom["attributes"] extends never
+                ? Record<number, unknown>
+                : Partial<Custom["attributes"]> & Record<number, unknown>
+            : Record<number, unknown>;
+
+export type ClusterCommandKeys<Cl extends string | number, Custom extends TCustomCluster | undefined = undefined> =
+    TClusterCommands<Cl> extends never
+        ? Custom extends TCustomCluster
+            ? Custom["commands"] extends never
+                ? number[]
+                : (keyof Custom["commands"] | number)[]
+            : number[]
+        : Cl extends keyof TClusters
+          ? Custom extends TCustomCluster
+              ? Custom["commands"] extends never
+                  ? // don't use `TClusterCommandKeys<Cl>` as that allows "symbol"
+                    (keyof TClusters[Cl]["commands"] | number)[]
+                  : (keyof Custom["commands"] | keyof TClusters[Cl]["commands"] | number)[]
+              : (keyof TClusters[Cl]["commands"] | number)[]
+          : Custom extends TCustomCluster
+            ? Custom["commands"] extends never
+                ? number[]
+                : (keyof Custom["commands"] | number)[]
+            : number[];
+
+export type ClusterCommandResponseKeys<Cl extends string | number, Custom extends TCustomCluster | undefined = undefined> =
+    TClusterCommandResponses<Cl> extends never
+        ? Custom extends TCustomCluster
+            ? Custom["commandResponses"] extends never
+                ? number[]
+                : (keyof Custom["commandResponses"] | number)[]
+            : number[]
+        : Cl extends keyof TClusters
+          ? Custom extends TCustomCluster
+              ? Custom["commandResponses"] extends never
+                  ? // don't use `TClusterCommandResponseKeys<Cl>` as that allows "symbol"
+                    (keyof TClusters[Cl]["commandResponses"] | number)[]
+                  : (keyof Custom["commandResponses"] | keyof TClusters[Cl]["commandResponses"] | number)[]
+              : (keyof TClusters[Cl]["commandResponses"] | number)[]
+          : Custom extends TCustomCluster
+            ? Custom["commandResponses"] extends never
+                ? number[]
+                : (keyof Custom["commandResponses"] | number)[]
+            : number[];
 
 export type TCustomClusterPayload<Custom extends TCustomCluster, Co extends string | number> = Custom["commands"] extends never
     ? Custom["commandResponses"] extends never

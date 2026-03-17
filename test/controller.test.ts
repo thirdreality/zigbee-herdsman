@@ -631,7 +631,7 @@ describe("Controller", () => {
         expect(Group.byGroupID(2)).toBeUndefined();
 
         const group2 = controller.createGroup(2);
-        group2.removeFromNetwork();
+        await group2.removeFromNetwork();
         // @ts-expect-error private
         expect(Group.groups.size).toStrictEqual(1);
         expect(Group.byGroupID(1)).toBeInstanceOf(Group);
@@ -648,7 +648,8 @@ describe("Controller", () => {
     });
 
     it("Controller start", async () => {
-        await controller.start();
+        const abortController = new AbortController();
+        await controller.start(abortController.signal);
         expect(mockAdapterStart).toHaveBeenCalledTimes(1);
         expect(deepClone(controller.getDevicesByType("Coordinator")[0])).toStrictEqual({
             ID: 1,
@@ -710,6 +711,33 @@ describe("Controller", () => {
         vi.advanceTimersByTime(86500000);
     });
 
+    it("aborts start on signal", async () => {
+        const abortController = new AbortController();
+        mockAdapterStart.mockImplementationOnce(async () => {
+            abortController.abort();
+
+            return await Promise.resolve("resumed");
+        });
+        const getNetworkParametersSpy = vi.spyOn(controller, "getNetworkParameters");
+        const backupSpy = vi.spyOn(controller, "backup");
+        const deviceResetCacheSpy = vi.spyOn(Device, "resetCache");
+        const groupResetCacheSpy = vi.spyOn(Group, "resetCache");
+
+        try {
+            await expect(controller.start(abortController.signal)).rejects.toThrow("This operation was aborted");
+            expect(mockAdapterStart).toHaveBeenCalledTimes(1);
+            expect(getNetworkParametersSpy).toHaveBeenCalledTimes(0);
+            expect(backupSpy).toHaveBeenCalledTimes(0);
+            expect(deviceResetCacheSpy).toHaveBeenCalledTimes(0);
+            expect(groupResetCacheSpy).toHaveBeenCalledTimes(0);
+        } finally {
+            getNetworkParametersSpy.mockRestore();
+            backupSpy.mockRestore();
+            deviceResetCacheSpy.mockRestore();
+            groupResetCacheSpy.mockRestore();
+        }
+    });
+
     it("Controller update ieeeAddr if changed", async () => {
         await controller.start();
         expect(controller.getDevicesByType("Coordinator")[0].ieeeAddr).toStrictEqual("0x0000012300000000");
@@ -756,12 +784,9 @@ describe("Controller", () => {
             command: {
                 ID: 0,
                 response: 1,
-                parameters: [
-                    {name: "transactionID", type: 35},
-                    {name: "zigbeeInformation", type: 24},
-                    {name: "touchlinkInformation", type: 24},
-                ],
+                parameters: expect.any(Array),
                 name: "scanRequest",
+                required: true,
             },
         });
         expect(deepClone(mocksendZclFrameInterPANBroadcast.mock.calls[1][0])).toStrictEqual({
@@ -781,12 +806,9 @@ describe("Controller", () => {
             command: {
                 ID: 0,
                 response: 1,
-                parameters: [
-                    {name: "transactionID", type: 35},
-                    {name: "zigbeeInformation", type: 24},
-                    {name: "touchlinkInformation", type: 24},
-                ],
+                parameters: expect.any(Array),
                 name: "scanRequest",
+                required: true,
             },
         });
         expect(mockRestoreChannelInterPAN).toHaveBeenCalledTimes(1);
@@ -807,11 +829,9 @@ describe("Controller", () => {
             },
             command: {
                 ID: 6,
-                parameters: [
-                    {name: "transactionID", type: 35},
-                    {name: "duration", type: 33},
-                ],
+                parameters: expect.any(Array),
                 name: "identifyRequest",
+                required: true,
             },
         });
         expect(deepClone(mocksendZclFrameInterPANToIeeeAddr.mock.calls[1][0])).toStrictEqual({
@@ -828,7 +848,7 @@ describe("Controller", () => {
                 commands: expect.any(Object),
                 commandsResponse: expect.any(Object),
             },
-            command: {ID: 7, parameters: [{name: "transactionID", type: 35}], name: "resetToFactoryNew"},
+            command: {ID: 7, parameters: expect.any(Array), name: "resetToFactoryNew", required: true},
         });
     });
 
@@ -869,12 +889,9 @@ describe("Controller", () => {
             command: {
                 ID: 0,
                 response: 1,
-                parameters: [
-                    {name: "transactionID", type: 35},
-                    {name: "zigbeeInformation", type: 24},
-                    {name: "touchlinkInformation", type: 24},
-                ],
+                parameters: expect.any(Array),
                 name: "scanRequest",
+                required: true,
             },
         });
         expect(deepClone(mocksendZclFrameInterPANBroadcast.mock.calls[1][0])).toStrictEqual({
@@ -894,12 +911,9 @@ describe("Controller", () => {
             command: {
                 ID: 0,
                 response: 1,
-                parameters: [
-                    {name: "transactionID", type: 35},
-                    {name: "zigbeeInformation", type: 24},
-                    {name: "touchlinkInformation", type: 24},
-                ],
+                parameters: expect.any(Array),
                 name: "scanRequest",
+                required: true,
             },
         });
         expect(mockRestoreChannelInterPAN).toHaveBeenCalledTimes(1);
@@ -954,12 +968,9 @@ describe("Controller", () => {
             command: {
                 ID: 0,
                 response: 1,
-                parameters: [
-                    {name: "transactionID", type: 35},
-                    {name: "zigbeeInformation", type: 24},
-                    {name: "touchlinkInformation", type: 24},
-                ],
+                parameters: expect.any(Array),
                 name: "scanRequest",
+                required: true,
             },
         });
         expect(mockRestoreChannelInterPAN).toHaveBeenCalledTimes(1);
@@ -980,11 +991,9 @@ describe("Controller", () => {
             },
             command: {
                 ID: 6,
-                parameters: [
-                    {name: "transactionID", type: 35},
-                    {name: "duration", type: 33},
-                ],
+                parameters: expect.any(Array),
                 name: "identifyRequest",
+                required: true,
             },
         });
         expect(deepClone(mocksendZclFrameInterPANToIeeeAddr.mock.calls[1][0])).toStrictEqual({
@@ -1001,7 +1010,7 @@ describe("Controller", () => {
                 commands: expect.any(Object),
                 commandsResponse: expect.any(Object),
             },
-            command: {ID: 7, parameters: [{name: "transactionID", type: 35}], name: "resetToFactoryNew"},
+            command: {ID: 7, parameters: expect.any(Array), name: "resetToFactoryNew", required: true},
         });
     });
 
@@ -1032,12 +1041,9 @@ describe("Controller", () => {
             command: {
                 ID: 0,
                 response: 1,
-                parameters: [
-                    {name: "transactionID", type: 35},
-                    {name: "zigbeeInformation", type: 24},
-                    {name: "touchlinkInformation", type: 24},
-                ],
+                parameters: expect.any(Array),
                 name: "scanRequest",
+                required: true,
             },
         });
         expect(mockRestoreChannelInterPAN).toHaveBeenCalledTimes(1);
@@ -1058,11 +1064,9 @@ describe("Controller", () => {
             },
             command: {
                 ID: 6,
-                parameters: [
-                    {name: "transactionID", type: 35},
-                    {name: "duration", type: 33},
-                ],
+                parameters: expect.any(Array),
                 name: "identifyRequest",
+                required: true,
             },
         });
     });
@@ -1134,7 +1138,8 @@ describe("Controller", () => {
         mockAdapterGetNetworkParameters.mockReturnValueOnce({panID: 1, extendedPanID: "0x64c5fd698daf0c00", channel: 25, nwkUpdateID: 0});
         // @ts-expect-error private
         const changeChannelSpy = vi.spyOn(controller, "changeChannel");
-        await controller.start();
+        const abortController = new AbortController();
+        await controller.start(abortController.signal);
         expect(mockAdapterGetNetworkParameters).toHaveBeenCalledTimes(1);
         const zdoPayload = Zdo.Buffalo.buildRequest(false, Zdo.ClusterId.NWK_UPDATE_REQUEST, [15], 0xfe, undefined, 1, undefined);
         expect(mockAdapterSendZdo).toHaveBeenCalledWith(
@@ -1822,8 +1827,10 @@ describe("Controller", () => {
         await controller.stop();
 
         mockAdapterStart.mockReturnValueOnce("reset");
-        await controller.start();
+        const abortController = new AbortController();
+        await controller.start(abortController.signal);
         expect(controller.getDevices().length).toBe(1);
+        expect(controller.getGroupsIterator().next().value).toBeUndefined();
         expect(controller.getDevicesByType("Coordinator")[0].type).toBe("Coordinator");
         expect(controller.getDeviceByIeeeAddr("0x129")).toBeUndefined();
         expect(controller.getGroupByID(1)).toBeUndefined();
@@ -2311,71 +2318,14 @@ describe("Controller", () => {
                 commandIdentifier: 2,
             },
             payload: [{attrId: 16, attrData: "0x0000012300000000", dataType: 240}],
-            cluster: {
+            cluster: expect.objectContaining({
                 ID: 1280,
-                attributes: {
-                    zoneState: {ID: 0, type: 48, name: "zoneState"},
-                    zoneType: {ID: 1, type: 49, name: "zoneType"},
-                    zoneStatus: {ID: 2, type: 25, name: "zoneStatus"},
-                    iasCieAddr: {ID: 16, type: 240, name: "iasCieAddr"},
-                    zoneId: {ID: 17, type: 32, name: "zoneId"},
-                    numZoneSensitivityLevelsSupported: {ID: 18, type: 32, name: "numZoneSensitivityLevelsSupported"},
-                    currentZoneSensitivityLevel: {ID: 19, type: 32, name: "currentZoneSensitivityLevel"},
-                    develcoAlarmOffDelay: {ID: 32769, type: 33, manufacturerCode: 4117, name: "develcoAlarmOffDelay"},
-                },
                 name: "ssIasZone",
-                commands: {
-                    enrollRsp: {
-                        ID: 0,
-                        parameters: [
-                            {name: "enrollrspcode", type: 32},
-                            {name: "zoneid", type: 32},
-                        ],
-                        name: "enrollRsp",
-                    },
-                    initNormalOpMode: {ID: 1, parameters: [], name: "initNormalOpMode"},
-                    initTestMode: {
-                        ID: 2,
-                        parameters: [
-                            {
-                                name: "testModeDuration",
-                                type: Zcl.DataType.UINT8,
-                            },
-                            {
-                                name: "currentZoneSensitivityLevel",
-                                type: Zcl.DataType.UINT8,
-                            },
-                        ],
-                        name: "initTestMode",
-                    },
-                },
-                commandsResponse: {
-                    statusChangeNotification: {
-                        ID: 0,
-                        parameters: [
-                            {name: "zonestatus", type: 33},
-                            {name: "extendedstatus", type: 32},
-                        ],
-                        name: "statusChangeNotification",
-                    },
-                    enrollReq: {
-                        ID: 1,
-                        parameters: [
-                            {name: "zonetype", type: 33},
-                            {name: "manucode", type: 33},
-                        ],
-                        name: "enrollReq",
-                    },
-                },
-            },
+            }),
             command: {
                 ID: 2,
                 name: "write",
-                parameters: [
-                    {name: "attrId", type: 33},
-                    {name: "dataType", type: 32},
-                    {name: "attrData", type: 1000},
-                ],
+                parameters: expect.any(Array),
                 response: 4,
             },
         });
@@ -2391,70 +2341,15 @@ describe("Controller", () => {
                 commandIdentifier: 0,
             },
             payload: {enrollrspcode: 0, zoneid: 23},
-            cluster: {
+            cluster: expect.objectContaining({
                 ID: 1280,
-                attributes: {
-                    zoneState: {ID: 0, type: 48, name: "zoneState"},
-                    zoneType: {ID: 1, type: 49, name: "zoneType"},
-                    zoneStatus: {ID: 2, type: 25, name: "zoneStatus"},
-                    iasCieAddr: {ID: 16, type: 240, name: "iasCieAddr"},
-                    zoneId: {ID: 17, type: 32, name: "zoneId"},
-                    numZoneSensitivityLevelsSupported: {ID: 18, type: 32, name: "numZoneSensitivityLevelsSupported"},
-                    currentZoneSensitivityLevel: {ID: 19, type: 32, name: "currentZoneSensitivityLevel"},
-                    develcoAlarmOffDelay: {ID: 32769, type: 33, manufacturerCode: 4117, name: "develcoAlarmOffDelay"},
-                },
                 name: "ssIasZone",
-                commands: {
-                    enrollRsp: {
-                        ID: 0,
-                        parameters: [
-                            {name: "enrollrspcode", type: 32},
-                            {name: "zoneid", type: 32},
-                        ],
-                        name: "enrollRsp",
-                    },
-                    initNormalOpMode: {ID: 1, parameters: [], name: "initNormalOpMode"},
-                    initTestMode: {
-                        ID: 2,
-                        parameters: [
-                            {
-                                name: "testModeDuration",
-                                type: Zcl.DataType.UINT8,
-                            },
-                            {
-                                name: "currentZoneSensitivityLevel",
-                                type: Zcl.DataType.UINT8,
-                            },
-                        ],
-                        name: "initTestMode",
-                    },
-                },
-                commandsResponse: {
-                    statusChangeNotification: {
-                        ID: 0,
-                        parameters: [
-                            {name: "zonestatus", type: 33},
-                            {name: "extendedstatus", type: 32},
-                        ],
-                        name: "statusChangeNotification",
-                    },
-                    enrollReq: {
-                        ID: 1,
-                        parameters: [
-                            {name: "zonetype", type: 33},
-                            {name: "manucode", type: 33},
-                        ],
-                        name: "enrollReq",
-                    },
-                },
-            },
+            }),
             command: {
                 ID: 0,
-                parameters: [
-                    {name: "enrollrspcode", type: 32},
-                    {name: "zoneid", type: 32},
-                ],
+                parameters: expect.any(Array),
                 name: "enrollRsp",
+                required: true,
             },
         });
     });
@@ -2613,6 +2508,51 @@ describe("Controller", () => {
         });
 
         expect(events.message.length).toBe(0);
+    });
+
+    it("Receive zclData with device deleted during processing (prevent race condition)", async () => {
+        const frame = Zcl.Frame.create(
+            Zcl.FrameType.GLOBAL,
+            Zcl.Direction.CLIENT_TO_SERVER,
+            true,
+            undefined,
+            40,
+            "read",
+            "genTime",
+            [{attrId: 0}, {attrId: 1}, {attrId: 2}, {attrId: 3}, {attrId: 4}, {attrId: 5}, {attrId: 6}, {attrId: 7}, {attrId: 8}, {attrId: 9}],
+            {},
+        );
+        await controller.start();
+        await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
+        const device = controller.getDeviceByIeeeAddr("0x129")!;
+        const endpoint = device.getEndpoint(1)!;
+        const deviceOnZclDataSpy = vi.spyOn(device, "onZclData");
+        const endpointCommandSpy = vi.spyOn(endpoint, "command");
+        const endpointReadResponseSpy = vi.spyOn(endpoint, "readResponse");
+        const endpointReadSpy = vi.spyOn(endpoint, "read");
+        const endpointDefaultResponseSpy = vi.spyOn(endpoint, "defaultResponse");
+
+        deviceOnZclDataSpy.mockImplementationOnce(async (a, b, c) => {
+            await mockAdapterEvents.deviceLeave({networkAddress: 129, ieeeAddr: undefined});
+            await device.onZclData(a, b, c);
+        });
+
+        await mockAdapterEvents.zclPayload({
+            wasBroadcast: false,
+            address: "0x129",
+            clusterID: frame.cluster.ID,
+            data: frame.toBuffer(),
+            header: frame.header,
+            endpoint: 1,
+            linkquality: 50,
+            groupID: 1,
+        });
+
+        expect(deviceOnZclDataSpy).toHaveBeenCalledTimes(2); // once for wrapper mock, once for real
+        expect(endpointCommandSpy).toHaveBeenCalledTimes(0);
+        expect(endpointReadResponseSpy).toHaveBeenCalledTimes(0);
+        expect(endpointReadSpy).toHaveBeenCalledTimes(0);
+        expect(endpointDefaultResponseSpy).toHaveBeenCalledTimes(0);
     });
 
     it("Receive readResponse from unknown endpoint", async () => {
@@ -3400,19 +3340,25 @@ describe("Controller", () => {
         });
         const buffer = Buffer.from([24, 169, 10, 0, 1, 24, 3, 0, 0, 24, 1, 2, 0, 24, 1]);
         const header = Zcl.Header.fromBuffer(buffer);
-        await mockAdapterEvents.zclPayload({
-            wasBroadcast: false,
-            address: 129,
-            clusterID: 0,
-            data: buffer,
-            header,
-            endpoint: 1,
-            linkquality: 50,
-            groupID: 1,
-        });
+        const payload = {wasBroadcast: false, address: 129, clusterID: 0, data: buffer, header, endpoint: 1, linkquality: 50, groupID: 1};
+        await mockAdapterEvents.zclPayload(payload);
         expect(events.message.length).toBe(1);
         expect(events.message[0].data).toStrictEqual({customAttr: 3, aDifferentZclVersion: 1, stackVersion: 1});
         expect(events.message[0].cluster).toBe("genBasic");
+
+        // Should allow to extend an already extended cluster again.
+        device.addCustomCluster("genBasic", {
+            ID: 0,
+            commands: {},
+            commandsResponse: {},
+            attributes: {
+                customAttrSecondOverride: {ID: 256, type: Zcl.DataType.UINT8},
+            },
+        });
+        await mockAdapterEvents.zclPayload(payload);
+        expect(events.message.length).toBe(2);
+        expect(events.message[1].data).toStrictEqual({customAttrSecondOverride: 3, aDifferentZclVersion: 1, stackVersion: 1});
+        expect(events.message[1].cluster).toBe("genBasic");
     });
 
     it("Should allow to specify custom cluster", async () => {
@@ -3469,6 +3415,188 @@ describe("Controller", () => {
         expect(events.message[0].cluster).toBe("myCustomCluster");
     });
 
+    it("merges added custom clusters definitions", async () => {
+        await controller.start();
+        await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
+        const device = controller.getDeviceByIeeeAddr("0x129")!;
+        const endpoint = device.endpoints[0]!;
+
+        interface BoschThermostatCluster {
+            attributes: {
+                /** ID: 16391 | Type: ENUM8 */
+                operatingMode: number;
+                /** ID: 16416 | Type: ENUM8 | Only used on BTH-RA */
+                heatingDemand: number;
+                /** ID: 16418 | Type: ENUM8 | Only used on BTH-RA */
+                valveAdaptStatus: number;
+                /** ID: 16421 | Type: ENUM8 | Only used on BTH-RM230Z with value depending on heaterType */
+                unknownAttribute0: number;
+                /** ID: 16448 | Type: INT16 | Only used on BTH-RA */
+                remoteTemperature: number;
+                /** ID: 16449 | Type: ENUM8 | Only used on BTH-RA with default value 0x01 */
+                unknownAttribute1: number;
+                /** ID: 16450 | Type: ENUM8 */
+                windowOpenMode: number;
+                /** ID: 16451 | Type: ENUM8 */
+                boostHeating: number;
+                /** ID: 16466 | Type: INT16 | Only used on BTH-RM and BTH-RM230Z */
+                cableSensorTemperature: number;
+                /** ID: 16480 | Type: ENUM8 | Only used on BTH-RM230Z */
+                valveType: number;
+                /** ID: 16481 | Type: ENUM8 | Read-only on BTH-RM230Z with value depending on heaterType */
+                unknownAttribute2: number;
+                /** ID: 16482 | Type: ENUM8 | Only used on BTH-RM and BTH-RM230Z */
+                cableSensorMode: number;
+                /** ID: 16483 | Type: ENUM8 | Only used on BTH-RM230Z */
+                heaterType: number;
+                /** ID: 20480 | Type: BITMAP8 */
+                errorState: number;
+                /** ID: 20496 | Type: ENUM8 | Only used on BTH-RA */
+                automaticValveAdapt: number;
+            };
+            commands: {
+                /** ID: 65 | Only used on BTH-RA */
+                calibrateValve: Record<string, never>;
+            };
+            commandResponses: never;
+        }
+
+        device.addCustomCluster("hvacThermostat", {
+            ID: 0x0201,
+            attributes: {
+                localTemperatureCalibration: {ID: 0x0010, type: Zcl.DataType.INT8, write: true, min: -50, max: 50, default: 0},
+            },
+            commands: {},
+            commandsResponse: {},
+        });
+        device.addCustomCluster("hvacThermostat", {
+            ID: Zcl.Clusters.hvacThermostat.ID,
+            attributes: {
+                operatingMode: {
+                    ID: 0x4007,
+                    type: Zcl.DataType.ENUM8,
+                    manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
+                    write: true,
+                    max: 0xff,
+                },
+                heatingDemand: {
+                    ID: 0x4020,
+                    type: Zcl.DataType.ENUM8,
+                    manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
+                    write: true,
+                    max: 0xff,
+                },
+                valveAdaptStatus: {
+                    ID: 0x4022,
+                    type: Zcl.DataType.ENUM8,
+                    manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
+                    write: true,
+                    max: 0xff,
+                },
+                unknownAttribute0: {
+                    ID: 0x4025,
+                    type: Zcl.DataType.ENUM8,
+                    manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
+                    write: true,
+                    max: 0xff,
+                },
+                remoteTemperature: {
+                    ID: 0x4040,
+                    type: Zcl.DataType.INT16,
+                    manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
+                    write: true,
+                    min: -32768,
+                },
+                unknownAttribute1: {
+                    ID: 0x4041,
+                    type: Zcl.DataType.ENUM8,
+                    manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
+                    write: true,
+                    max: 0xff,
+                },
+                windowOpenMode: {
+                    ID: 0x4042,
+                    type: Zcl.DataType.ENUM8,
+                    manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
+                    write: true,
+                    max: 0xff,
+                },
+                boostHeating: {
+                    ID: 0x4043,
+                    type: Zcl.DataType.ENUM8,
+                    manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
+                    write: true,
+                    max: 0xff,
+                },
+                cableSensorTemperature: {
+                    ID: 0x4052,
+                    type: Zcl.DataType.INT16,
+                    manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
+                    write: true,
+                    min: -32768,
+                },
+                valveType: {ID: 0x4060, type: Zcl.DataType.ENUM8, manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH, write: true, max: 0xff},
+                unknownAttribute2: {
+                    ID: 0x4061,
+                    type: Zcl.DataType.ENUM8,
+                    manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
+                    write: true,
+                    max: 0xff,
+                },
+                cableSensorMode: {
+                    ID: 0x4062,
+                    type: Zcl.DataType.ENUM8,
+                    manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
+                    write: true,
+                    max: 0xff,
+                },
+                heaterType: {ID: 0x4063, type: Zcl.DataType.ENUM8, manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH, write: true, max: 0xff},
+                errorState: {ID: 0x5000, type: Zcl.DataType.BITMAP8, manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH, write: true},
+                automaticValveAdapt: {
+                    ID: 0x5010,
+                    type: Zcl.DataType.ENUM8,
+                    manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
+                    write: true,
+                    max: 0xff,
+                },
+            },
+            commands: {
+                calibrateValve: {ID: 0x41, parameters: []},
+            },
+            commandsResponse: {},
+        });
+
+        await expect(
+            endpoint.write<"hvacThermostat", BoschThermostatCluster>(
+                "hvacThermostat",
+                {localTemperatureCalibration: -47, cableSensorMode: 0x02},
+                {manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH},
+            ),
+        ).resolves.toStrictEqual(undefined);
+
+        await expect(
+            endpoint.write<"hvacThermostat", BoschThermostatCluster>(
+                "hvacThermostat",
+                {localTemperatureCalibration: 50, heatingDemand: 0x01},
+                {manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH},
+            ),
+        ).resolves.toStrictEqual(undefined);
+
+        await expect(
+            endpoint.write<"hvacThermostat", BoschThermostatCluster>(
+                "hvacThermostat",
+                {localTemperatureCalibration: 51},
+                {manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH},
+            ),
+        ).rejects.toThrow("localTemperatureCalibration requires max of 50");
+
+        await expect(
+            endpoint.read<"hvacThermostat", BoschThermostatCluster>("hvacThermostat", ["boostHeating", "operatingMode"], {
+                manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
+            }),
+        ).resolves.toStrictEqual({16391: 0, 16451: 0});
+    });
+
     it("Send zcl command to all no options", async () => {
         await controller.start();
         await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
@@ -3498,7 +3626,7 @@ describe("Controller", () => {
         const device = controller.getDeviceByIeeeAddr("0x129")!;
         device.addCustomCluster("ssIasZone", {
             ID: Zcl.Clusters.ssIasZone.ID,
-            commands: {boschSmokeAlarmSiren: {ID: 0x80, parameters: [{name: "data", type: Zcl.DataType.UINT16}]}},
+            commands: {boschSmokeAlarmSiren: {ID: 0x80, parameters: [{name: "data", type: Zcl.DataType.UINT16, max: 0xffff}]}},
             commandsResponse: {},
             attributes: {},
         });
@@ -4178,6 +4306,28 @@ describe("Controller", () => {
         expect(endpoint.binds.length).toBe(0);
     });
 
+    it("Group unbind by number, non-existing group and non-existing bind with force=true", async () => {
+        await controller.start();
+        await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
+        const device = controller.getDeviceByIeeeAddr("0x129")!;
+        const endpoint = device.getEndpoint(1)!;
+        expect(endpoint.binds.length).toBe(0);
+        await endpoint.unbind("genPowerCfg", 5, true);
+        const zdoPayload = Zdo.Buffalo.buildRequest(
+            false,
+            Zdo.ClusterId.UNBIND_REQUEST,
+            "0x129",
+            1,
+            1,
+            Zdo.MULTICAST_BINDING,
+            ZSpec.BLANK_EUI64,
+            5,
+            0xff,
+        );
+        expect(mockAdapterSendZdo).toHaveBeenCalledWith("0x129", 129, Zdo.ClusterId.UNBIND_REQUEST, zdoPayload, false);
+        expect(endpoint.binds.length).toBe(0);
+    });
+
     it("Endpoint configure reporting", async () => {
         await controller.start();
         await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
@@ -4346,7 +4496,7 @@ describe("Controller", () => {
 
         expect(endpoint.configuredReportings.length).toBe(1);
         expect({...endpoint.configuredReportings[0], cluster: undefined}).toStrictEqual({
-            attribute: {ID: 16384, type: 48, manufacturerCode: 4641, name: "viessmannWindowOpenInternal"},
+            attribute: expect.objectContaining({ID: 16384, type: 48, manufacturerCode: 4641, name: "viessmannWindowOpenInternal"}),
             minimumReportInterval: 1,
             maximumReportInterval: 10,
             reportableChange: 1,
@@ -4393,42 +4543,12 @@ describe("Controller", () => {
 
         expect(endpoint.configuredReportings.length).toBe(1);
         expect({...endpoint.configuredReportings[0], cluster: undefined}).toStrictEqual({
-            attribute: {ID: 16384, type: 48, manufacturerCode: 4641, name: "viessmannWindowOpenInternal"},
+            attribute: expect.objectContaining({ID: 16384, type: 48, manufacturerCode: 4641, name: "viessmannWindowOpenInternal"}),
             minimumReportInterval: 1,
             maximumReportInterval: 10,
             reportableChange: 1,
             cluster: undefined,
         });
-    });
-
-    it("Endpoint configure reporting with manufacturer attribute should throw exception", async () => {
-        await controller.start();
-        await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
-        const device = controller.getDeviceByIeeeAddr("0x129")!;
-        // @ts-expect-error private
-        device._manufacturerID = Zcl.ManufacturerCode.VIESSMANN_ELEKTRONIK_GMBH;
-        const endpoint = device.getEndpoint(1)!;
-        mocksendZclFrameToEndpoint.mockClear();
-        let error;
-        try {
-            await endpoint.configureReporting("hvacThermostat", [
-                {
-                    attribute: "localTemp",
-                    minimumReportInterval: 1,
-                    maximumReportInterval: 10,
-                    reportableChange: 1,
-                },
-                {
-                    attribute: "viessmannWindowOpenInternal",
-                    minimumReportInterval: 1,
-                    maximumReportInterval: 10,
-                    reportableChange: 1,
-                },
-            ]);
-        } catch (e) {
-            error = e;
-        }
-        expect(error).toStrictEqual(new Error("Cannot have attributes with different manufacturerCode in single 'configureReporting' call"));
     });
 
     it("Save endpoint configure reporting", async () => {
@@ -4662,14 +4782,18 @@ describe("Controller", () => {
         expect(deepClone(endpoint.configuredReportings)).toStrictEqual([
             {
                 cluster: deepClone(genPowerCfg),
-                attribute: {ID: genPowerCfg.attributes.mainsFrequency.ID, name: "mainsFrequency", type: Zcl.DataType.UINT8},
+                attribute: expect.objectContaining({ID: genPowerCfg.attributes.mainsFrequency.ID, name: "mainsFrequency", type: Zcl.DataType.UINT8}),
                 minimumReportInterval: 60,
                 maximumReportInterval: 3600,
                 reportableChange: 10,
             },
             {
                 cluster: deepClone(genPowerCfg),
-                attribute: {ID: genPowerCfg.attributes.batteryAHrRating.ID, name: "batteryAHrRating", type: Zcl.DataType.UINT16},
+                attribute: expect.objectContaining({
+                    ID: genPowerCfg.attributes.batteryAHrRating.ID,
+                    name: "batteryAHrRating",
+                    type: Zcl.DataType.UINT16,
+                }),
                 minimumReportInterval: 10,
                 maximumReportInterval: 1800,
                 reportableChange: 1,
@@ -4714,14 +4838,14 @@ describe("Controller", () => {
         expect(deepClone(endpoint.configuredReportings)).toStrictEqual([
             {
                 cluster: deepClone(genPowerCfg),
-                attribute: {ID: genPowerCfg.attributes.mainsFrequency.ID, name: "mainsFrequency", type: Zcl.DataType.UINT8},
+                attribute: expect.objectContaining({ID: genPowerCfg.attributes.mainsFrequency.ID, name: "mainsFrequency", type: Zcl.DataType.UINT8}),
                 minimumReportInterval: 30,
                 maximumReportInterval: 600,
                 reportableChange: 2,
             },
             {
                 cluster: deepClone(genPowerCfg),
-                attribute: {ID: genPowerCfg.attributes.mainsVoltage.ID, name: "mainsVoltage", type: Zcl.DataType.UINT16},
+                attribute: expect.objectContaining({ID: genPowerCfg.attributes.mainsVoltage.ID, name: "mainsVoltage", type: Zcl.DataType.UINT16}),
                 minimumReportInterval: 0,
                 maximumReportInterval: 30,
                 reportableChange: 10,
@@ -4849,12 +4973,12 @@ describe("Controller", () => {
         expect(deepClone(endpoint.configuredReportings)).toStrictEqual([
             {
                 cluster: deepClone(genBasic),
-                attribute: {
+                attribute: expect.objectContaining({
                     ID: genBasic.attributes.schneiderMeterRadioPower.ID,
                     name: "schneiderMeterRadioPower",
                     type: Zcl.DataType.INT8,
                     manufacturerCode: Zcl.ManufacturerCode.SCHNEIDER_ELECTRIC,
-                },
+                }),
                 minimumReportInterval: 80,
                 maximumReportInterval: 300,
                 reportableChange: 10,
@@ -4889,12 +5013,12 @@ describe("Controller", () => {
         expect(deepClone(endpoint.configuredReportings)).toStrictEqual([
             {
                 cluster: deepClone(genBasic),
-                attribute: {
+                attribute: expect.objectContaining({
                     ID: genBasic.attributes.schneiderMeterRadioPower.ID,
                     name: "schneiderMeterRadioPower",
                     type: Zcl.DataType.INT8,
                     manufacturerCode: Zcl.ManufacturerCode.SCHNEIDER_ELECTRIC,
-                },
+                }),
                 minimumReportInterval: 15,
                 maximumReportInterval: 213,
                 reportableChange: 3,
@@ -5039,10 +5163,7 @@ describe("Controller", () => {
             cluster: null,
             command: {
                 ID: 64,
-                parameters: [
-                    {name: "effectid", type: 32},
-                    {name: "effectvariant", type: 32},
-                ],
+                parameters: expect.any(Array),
                 name: "offWithEffect",
             },
         });
@@ -5067,7 +5188,7 @@ describe("Controller", () => {
             },
             payload: {},
             cluster: null,
-            command: {ID: 0, parameters: [], name: "off"},
+            command: {ID: 0, parameters: expect.any(Array), name: "off", required: true},
         });
         expect(mocksendZclFrameToEndpoint.mock.calls[0][4]).toBe(10000);
         expect(mocksendZclFrameToEndpoint.mock.calls[0][5]).toBe(false);
@@ -5081,6 +5202,14 @@ describe("Controller", () => {
         const device = controller.getDeviceByIeeeAddr("0x129")!;
         const endpoint = device.getEndpoint(1)!;
         mocksendZclFrameToEndpoint.mockClear();
+        device.addCustomCluster("manuSpecificAssaDoorLock", {
+            ID: 0xfc00,
+            attributes: {},
+            commands: {
+                getBatteryLevel: {ID: 0x12, parameters: []},
+            },
+            commandsResponse: {},
+        });
         await endpoint.command("manuSpecificAssaDoorLock", "getBatteryLevel", {});
         expect(mocksendZclFrameToEndpoint.mock.calls[0][0]).toBe("0x129");
         expect(mocksendZclFrameToEndpoint.mock.calls[0][1]).toBe(129);
@@ -5126,66 +5255,6 @@ describe("Controller", () => {
         };
         expect(deepClone(mocksendZclFrameToEndpoint.mock.calls[0][3])).toStrictEqual(expected);
         expect(mocksendZclFrameToEndpoint.mock.calls[0][4]).toBe(10000);
-    });
-
-    it("Endpoint waitForCommand", async () => {
-        await controller.start();
-        await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
-        const device = controller.getDeviceByIeeeAddr("0x129")!;
-        const endpoint = device.getEndpoint(1)!;
-        mocksendZclFrameToEndpoint.mockClear();
-        const buffer = Buffer.from([24, 169, 10, 0, 0, 24, 1]);
-        const frame = Zcl.Frame.fromBuffer(Zcl.Utils.getCluster("msOccupancySensing", undefined, {}).ID, Zcl.Header.fromBuffer(buffer), buffer, {});
-        const promise = new Promise((resolve, _reject) => resolve({clusterID: frame.cluster.ID, data: frame.toBuffer(), header: frame.header}));
-        mockAdapterWaitFor.mockReturnValueOnce({promise, cancel: () => {}});
-        const result = endpoint.waitForCommand("genOta", "upgradeEndRequest", 10, 20);
-        expect(mockAdapterWaitFor).toHaveBeenCalledTimes(1);
-        expect(mockAdapterWaitFor).toHaveBeenCalledWith(129, 1, 1, 0, 10, 25, 6, 20);
-        expect(result.cancel).toStrictEqual(expect.any(Function));
-        expect(deepClone(await result.promise)).toStrictEqual({
-            header: {
-                commandIdentifier: 10,
-                frameControl: {reservedBits: 0, direction: 1, disableDefaultResponse: true, frameType: 0, manufacturerSpecific: false},
-                transactionSequenceNumber: 169,
-            },
-            payload: [{attrData: 1, attrId: 0, dataType: 24}],
-        });
-    });
-
-    it("Endpoint waitForCommand error", async () => {
-        await controller.start();
-        await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
-        const device = controller.getDeviceByIeeeAddr("0x129")!;
-        const endpoint = device.getEndpoint(1)!;
-        mocksendZclFrameToEndpoint.mockClear();
-        const promise = new Promise((_resolve, reject) => reject(new Error("whoops!")));
-        mockAdapterWaitFor.mockReturnValueOnce({promise, cancel: () => {}});
-        const result = endpoint.waitForCommand("genOta", "upgradeEndRequest", 10, 20);
-        let error;
-        try {
-            await result.promise;
-        } catch (e) {
-            error = e;
-        }
-        expect(error).toStrictEqual(new Error("whoops!"));
-    });
-
-    it("Endpoint waitForCommand frame fails to parse", async () => {
-        await controller.start();
-        await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
-        const device = controller.getDeviceByIeeeAddr("0x129")!;
-        const endpoint = device.getEndpoint(1)!;
-        mocksendZclFrameToEndpoint.mockClear();
-        // The buffer below ([24, 169, 10, 0, 0, 24]) is intentionally malformed:
-        // It is missing expected payload bytes for a valid ZCL frame, causing Zcl.Frame.fromBuffer to throw a parsing error.
-        // This triggers the error handling path being tested.
-        const buffer = Buffer.from([24, 169, 10, 0, 0, 24]);
-        const header = Zcl.Header.fromBuffer(buffer);
-        const promise = new Promise((resolve, _reject) => resolve({clusterID: Zcl.Utils.getCluster("msOccupancySensing").ID, data: buffer, header}));
-        mockAdapterWaitFor.mockReturnValueOnce({promise, cancel: () => {}});
-        await expect(endpoint.waitForCommand("genOta", "upgradeEndRequest", 10, 20).promise).rejects.toThrow(
-            `The value of "offset" is out of range. It must be >= 0 and <= 5. Received 6`,
-        );
     });
 
     it("Device without meta should set meta to {}", async () => {
@@ -5478,23 +5547,6 @@ describe("Controller", () => {
         expect(mocksendZclFrameToEndpoint).toHaveBeenCalledTimes(0);
     });
 
-    it("Write to endpoint with mixed manufacturer attributes", async () => {
-        await controller.start();
-        await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
-        mocksendZclFrameToEndpoint.mockClear();
-        const device = controller.getDeviceByIeeeAddr("0x129")!;
-        // @ts-expect-error private
-        device._manufacturerID = Zcl.ManufacturerCode.VIESSMANN_ELEKTRONIK_GMBH;
-        const endpoint = device.getEndpoint(1)!;
-        let error;
-        try {
-            await endpoint.write("hvacThermostat", {occupiedHeatingSetpoint: 2000, viessmannWindowOpenInternal: 1});
-        } catch (e) {
-            error = e;
-        }
-        expect(error).toStrictEqual(new Error("Cannot have attributes with different manufacturerCode in single 'write' call"));
-    });
-
     it("Write response to endpoint with non ZCL attribute", async () => {
         await controller.start();
         await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
@@ -5707,23 +5759,6 @@ describe("Controller", () => {
             deepClone(Zcl.Frame.create(Zcl.FrameType.GLOBAL, Zcl.Direction.CLIENT_TO_SERVER, true, 4641, 9, "read", 513, [{attrId: 16384}], {})),
         );
         expect(call[4]).toBe(10000);
-    });
-
-    it("Read mixed manufacturer attributes from endpoint", async () => {
-        await controller.start();
-        await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
-        mocksendZclFrameToEndpoint.mockClear();
-        const device = controller.getDeviceByIeeeAddr("0x129")!;
-        // @ts-expect-error private
-        device._manufacturerID = Zcl.ManufacturerCode.VIESSMANN_ELEKTRONIK_GMBH;
-        const endpoint = device.getEndpoint(1)!;
-        let error;
-        try {
-            await endpoint.read("hvacThermostat", ["localTemp", "viessmannWindowOpenInternal"]);
-        } catch (e) {
-            error = e;
-        }
-        expect(error).toStrictEqual(new Error("Cannot have attributes with different manufacturerCode in single 'read' call"));
     });
 
     it("Read from endpoint unknown attribute with options", async () => {
@@ -6667,13 +6702,13 @@ describe("Controller", () => {
         mocksendZclFrameToEndpoint.mockRejectedValueOnce(new Error("timeout occurred"));
         let error;
         try {
-            await endpoint.write("genOnOff", {onOff: 1});
+            await endpoint.write("genOnOff", {onTime: 1});
         } catch (e) {
             error = e;
         }
         expect(error).toStrictEqual(
             new Error(
-                `ZCL command 0x129/1 genOnOff.write({"onOff":1}, {"timeout":10000,"disableResponse":false,"disableRecovery":false,"disableDefaultResponse":true,"direction":0,"reservedBits":0,"writeUndiv":false}) failed (timeout occurred)`,
+                `ZCL command 0x129/1 genOnOff.write({"onTime":1}, {"timeout":10000,"disableResponse":false,"disableRecovery":false,"disableDefaultResponse":true,"direction":0,"reservedBits":0,"writeUndiv":false}) failed (timeout occurred)`,
             ),
         );
     });
@@ -6685,7 +6720,7 @@ describe("Controller", () => {
         const endpoint = device.getEndpoint(1)!;
         mocksendZclFrameToEndpoint.mockReturnValueOnce(null);
 
-        await endpoint.write("genOnOff", {onOff: 1}, {disableResponse: true});
+        await endpoint.write("genOnOff", {onTime: 1}, {disableResponse: true});
     });
 
     it("Group command error", async () => {
@@ -7904,7 +7939,7 @@ describe("Controller", () => {
         mocksendZclFrameToEndpoint.mockRejectedValueOnce(new Error("Dogs barking too hard"));
         mocksendZclFrameToEndpoint.mockReturnValueOnce(null);
         const nextTick = new Promise(process.nextTick);
-        const result = endpoint.write("genOnOff", {onOff: 1}, {disableResponse: true});
+        const result = endpoint.write("genOnOff", {onTime: 1}, {disableResponse: true});
         expect(mocksendZclFrameToEndpoint).toHaveBeenCalledTimes(1);
 
         await nextTick;
@@ -7932,10 +7967,10 @@ describe("Controller", () => {
         mocksendZclFrameToEndpoint.mockRejectedValueOnce(new Error("Dogs barking too hard"));
         mocksendZclFrameToEndpoint.mockRejectedValueOnce(new Error("Cats barking too hard"));
         try {
-            await endpoint.write("genOnOff", {onOff: 1}, {disableResponse: true, sendPolicy: "immediate"});
+            await endpoint.write("genOnOff", {onTime: 1}, {disableResponse: true, sendPolicy: "immediate"});
         } catch (error) {
             expect((error as Error).message).toStrictEqual(
-                `ZCL command 0x129/1 genOnOff.write({"onOff":1}, {"timeout":10000,"disableResponse":true,"disableRecovery":false,"disableDefaultResponse":true,"direction":0,"reservedBits":0,"writeUndiv":false,"sendPolicy":"immediate"}) failed (Dogs barking too hard)`,
+                `ZCL command 0x129/1 genOnOff.write({"onTime":1}, {"timeout":10000,"disableResponse":true,"disableRecovery":false,"disableDefaultResponse":true,"direction":0,"reservedBits":0,"writeUndiv":false,"sendPolicy":"immediate"}) failed (Dogs barking too hard)`,
             );
         }
         expect(mocksendZclFrameToEndpoint).toHaveBeenCalledTimes(1);
@@ -7995,7 +8030,7 @@ describe("Controller", () => {
         mocksendZclFrameToEndpoint.mockRejectedValueOnce(new Error("Cats barking too hard"));
         mocksendZclFrameToEndpoint.mockRejectedValueOnce(new Error("Dogs barking too hard"));
         let nextTick = new Promise(process.nextTick);
-        const result = endpoint.write("genOnOff", {onOff: 1}, {disableResponse: true});
+        const result = endpoint.write("genOnOff", {onTime: 1}, {disableResponse: true});
         await nextTick;
         expect(mocksendZclFrameToEndpoint).toHaveBeenCalledTimes(1);
 
@@ -8013,7 +8048,7 @@ describe("Controller", () => {
         }
         expect(mocksendZclFrameToEndpoint).toHaveBeenCalledTimes(2);
         expect((error as Error).message).toStrictEqual(
-            `ZCL command 0x129/1 genOnOff.write({"onOff":1}, {"timeout":10000,"disableResponse":true,"disableRecovery":false,"disableDefaultResponse":true,"direction":0,"reservedBits":0,"writeUndiv":false}) failed (Dogs barking too hard)`,
+            `ZCL command 0x129/1 genOnOff.write({"onTime":1}, {"timeout":10000,"disableResponse":true,"disableRecovery":false,"disableDefaultResponse":true,"direction":0,"reservedBits":0,"writeUndiv":false}) failed (Dogs barking too hard)`,
         );
     });
 
@@ -8078,19 +8113,19 @@ describe("Controller", () => {
         // biome-ignore lint/correctness/noUnusedVariables: test
         let result2;
         const nextTick = new Promise(process.nextTick);
-        endpoint.write("genOnOff", {onOff: 0, startUpOnOff: 0}, {disableResponse: true});
+        endpoint.write("genOnOff", {onTime: 0, startUpOnOff: 0}, {disableResponse: true});
         await nextTick;
         // Queue content:
         // 1. empty
-        // 2. ZCL write 'genOnOff' {onOff: 0, startUpOnOff: 0}
+        // 2. ZCL write 'genOnOff' {onTime: 0, startUpOnOff: 0}
         // @ts-expect-error private
         expect(endpoint.pendingRequests.size).toStrictEqual(2);
-        result1 = endpoint.write("genOnOff", {onOff: 0}, {disableResponse: true});
+        result1 = endpoint.write("genOnOff", {onTime: 0}, {disableResponse: true});
         await new Promise(process.nextTick);
         // Queue content:
         // 1. empty
         // 2. ZCL write 'genOnOff' {startUpOnOff: 0}
-        // 3. ZCL write 'genOnOff' {onOff: 0} --> result1
+        // 3. ZCL write 'genOnOff' {onTime: 0} --> result1
         // @ts-expect-error private
         expect(endpoint.pendingRequests.size).toStrictEqual(3);
         expect(mocksendZclFrameToEndpoint).toHaveBeenCalledTimes(2);
@@ -8109,7 +8144,7 @@ describe("Controller", () => {
         // Queue content:
         // 1. empty
         // 2. ZCL write 'genOnOff' {startUpOnOff: 0}
-        // 3. ZCL write 'genOnOff' {onOff: 0}
+        // 3. ZCL write 'genOnOff' {onTime: 0}
         // 4. add 1
         // @ts-expect-error private
         expect(endpoint.pendingRequests.size).toStrictEqual(4);
@@ -8117,30 +8152,30 @@ describe("Controller", () => {
 
         try {
             // Add the same ZCL request with different payload again, the first one should be rejected and removed from the queue
-            result2 = endpoint.write("genOnOff", {onOff: 1}, {disableResponse: true});
+            result2 = endpoint.write("genOnOff", {onTime: 1}, {disableResponse: true});
             await expect(await result1).rejects.toBe("asas");
         } catch {
             // Queue content:
             // 1. empty
             // 2. ZCL write 'genOnOff' {startUpOnOff: 0}
             // 3. add 1
-            // 4. ZCL write 'genOnOff' {onOff: 1} --> result2
+            // 4. ZCL write 'genOnOff' {onTime: 1} --> result2
             // @ts-expect-error private
             expect(endpoint.pendingRequests.size).toStrictEqual(4);
         }
         // Now add the same ZCL request with same payload again. The previous one should *not* be rejected but removed from the queue
-        endpoint.write("genOnOff", {onOff: 1}, {disableResponse: true});
+        endpoint.write("genOnOff", {onTime: 1}, {disableResponse: true});
         await new Promise(process.nextTick);
         // Queue content:
         // 1. empty
         // 2. ZCL write 'genOnOff' {startUpOnOff: 0}
         // 3. add 1
-        // 4. ZCL write 'genOnOff' {onOff: 1} --> result2, result3
+        // 4. ZCL write 'genOnOff' {onTime: 1} --> result2, result3
         // @ts-expect-error private
         expect(endpoint.pendingRequests.size).toStrictEqual(4);
 
         // writeUndiv request should not be divided, so both should go to the queue
-        endpoint.write("genOnOff", {onOff: 0, startUpOnOff: 0}, {disableResponse: true, writeUndiv: true});
+        endpoint.write("genOnOff", {onTime: 0, startUpOnOff: 0}, {disableResponse: true, writeUndiv: true});
         await new Promise(process.nextTick);
         endpoint.write("genOnOff", {startUpOnOff: 1}, {disableResponse: true, writeUndiv: true});
         await new Promise(process.nextTick);
@@ -8148,23 +8183,23 @@ describe("Controller", () => {
         // 1. empty
         // 2. ZCL write 'genOnOff' {startUpOnOff: 0}
         // 3. add 1
-        // 4. ZCL write 'genOnOff' {onOff: 1} --> result2, result3
-        // 5. ZCL writeUndiv 'genOnOff' {onOff: 0, startUpOnOff: 0}
+        // 4. ZCL write 'genOnOff' {onTime: 1} --> result2, result3
+        // 5. ZCL writeUndiv 'genOnOff' {onTime: 0, startUpOnOff: 0}
         // 6. ZCL writeUndiv 'genOnOff' {startUpOnOff: 1}
         // @ts-expect-error private
         expect(endpoint.pendingRequests.size).toStrictEqual(6);
 
         // read requests should be combined to one
-        const result4 = endpoint.read("genOnOff", ["onOff"], {disableResponse: false});
+        const result4 = endpoint.read("genOnOff", ["onTime"], {disableResponse: false});
         await new Promise(process.nextTick);
-        const result5 = endpoint.read("genOnOff", ["onOff"], {disableResponse: false});
+        const result5 = endpoint.read("genOnOff", ["onTime"], {disableResponse: false});
         await new Promise(process.nextTick);
         // Queue content:
         // 1. empty
         // 2. ZCL write 'genOnOff' {startUpOnOff: 0}
         // 3. add 1
-        // 4. ZCL write 'genOnOff' {onOff: 1} --> result2, result3
-        // 5. ZCL writeUndiv 'genOnOff' {onOff: 0, startUpOnOff: 0}
+        // 4. ZCL write 'genOnOff' {onTime: 1} --> result2, result3
+        // 5. ZCL writeUndiv 'genOnOff' {onTime: 0, startUpOnOff: 0}
         // 6. ZCL writeUndiv 'genOnOff' {startUpOnOff: 1}
         // 7. ZCL read 'genOnOff' --> result4, result5
         // @ts-expect-error private
@@ -8189,9 +8224,9 @@ describe("Controller", () => {
         await expect(result5).resolves.toStrictEqual({onTime: 3});
         expect(mocksendZclFrameToEndpoint).toHaveBeenCalledTimes(13);
         expect(mocksendZclFrameToEndpoint.mock.calls[8][3].payload).toStrictEqual([{attrData: 0, attrId: 16387, dataType: 48}]);
-        expect(mocksendZclFrameToEndpoint.mock.calls[9][3].payload).toStrictEqual([{attrData: 1, attrId: 0, dataType: 16}]);
+        expect(mocksendZclFrameToEndpoint.mock.calls[9][3].payload).toStrictEqual([{attrData: 1, attrId: 16385, dataType: 33}]);
         expect(mocksendZclFrameToEndpoint.mock.calls[10][3].payload).toStrictEqual([
-            {attrData: 0, attrId: 0, dataType: 16},
+            {attrData: 0, attrId: 16385, dataType: 33},
             {attrData: 0, attrId: 16387, dataType: 48},
         ]);
         expect(mocksendZclFrameToEndpoint.mock.calls[11][3].payload).toStrictEqual([{attrData: 1, attrId: 16387, dataType: 48}]);
@@ -8246,7 +8281,7 @@ describe("Controller", () => {
             // @ts-expect-error mock
             new Request(async () => {}, {}, 100),
         );
-        const result = endpoint.write("genOnOff", {onOff: 10}, {disableResponse: true});
+        const result = endpoint.write("genOnOff", {onTime: 10}, {disableResponse: true});
         expect(mocksendZclFrameToEndpoint).toHaveBeenCalledTimes(1);
 
         updatedMockedDate.setSeconds(updatedMockedDate.getSeconds() + 1001000);
@@ -8292,7 +8327,7 @@ describe("Controller", () => {
             ),
         );
         const nextTick = new Promise(process.nextTick);
-        const result = endpoint.write("genOnOff", {onOff: 10}, {disableResponse: true});
+        const result = endpoint.write("genOnOff", {onTime: 10}, {disableResponse: true});
         await nextTick;
         await endpoint.sendPendingRequests(false);
         await result;
@@ -8320,7 +8355,7 @@ describe("Controller", () => {
         };
         const nextTick = new Promise(process.nextTick);
 
-        const result = endpoint.write("genOnOff", {onOff: 1}, {disableResponse: true, sendPolicy: "bulk"});
+        const result = endpoint.write("genOnOff", {onTime: 1}, {disableResponse: true, sendPolicy: "bulk"});
         expect(mocksendZclFrameToEndpoint).toHaveBeenCalledTimes(0);
 
         const buffer = Buffer.from([24, 169, 10, 0, 0, 24, 1]);
@@ -9252,6 +9287,52 @@ describe("Controller", () => {
         expect(events.deviceNetworkAddressChanged.length).toBe(0);
     });
 
+    it("does not try to identify unknown device when deleted", async () => {
+        const nwkAddr = 40369;
+        const database = `
+        {"id":1,"type":"Coordinator","ieeeAddr":"0x0000012300000000","nwkAddr":0,"manufId":0,"epList":[11,6,5,4,3,2,1],"endpoints":{"1":{"profId":260,"epId":1,"devId":5,"inClusterList":[],"meta":{},"outClusterList":[],"clusters":{}},"2":{"profId":257,"epId":2,"devId":5,"inClusterList":[],"meta":{},"outClusterList":[],"clusters":{}},"3":{"profId":261,"epId":3,"devId":5,"inClusterList":[],"meta":{},"outClusterList":[],"clusters":{}},"4":{"profId":263,"epId":4,"devId":5,"inClusterList":[],"meta":{},"outClusterList":[],"clusters":{}},"5":{"profId":264,"epId":5,"devId":5,"inClusterList":[],"meta":{},"outClusterList":[],"clusters":{}},"6":{"profId":265,"epId":6,"devId":5,"inClusterList":[],"meta":{},"outClusterList":[],"clusters":{}},"11":{"profId":260,"epId":11,"devId":1024,"inClusterList":[],"meta":{},"outClusterList":[1280],"clusters":{}}},"interviewCompleted":false,"meta":{},"_id":"aM341ldunExFmJ3u"}
+        {"id":4,"type":"EndDevice","ieeeAddr":"0x0017880104e45517","lastSeen":123,"nwkAddr":${nwkAddr},"manufId":4107,"manufName":"Philips","powerSource":"Battery","modelId":"RWL021","epList":[1,2],"endpoints":{"1":{"profId":49246,"epId":1,"devId":2096,"inClusterList":[0],"meta":{},"outClusterList":[0,3,4,6,8,5],"binds":[{"type":"endpoint","endpointID":1,"deviceIeeeAddr":"0x000b57fffec6a5b2"}],"configuredReportings":[{"cluster":1,"attrId":0,"minRepIntval":1,"maxRepIntval":20,"repChange":2}],"clusters":{"genBasic":{"dir":{"value":3},"attrs":{"modelId":"RWL021"}}}},"2":{"profId":260,"epId":2,"devId":12,"inClusterList":[0,1,3,15,64512],"meta":{},"outClusterList":[25],"clusters":{}}},"appVersion":2,"stackVersion":1,"hwVersion":1,"dateCode":"20160302","swBuildId":"5.45.1.17846","zclVersion":1,"interviewState":"SUCCESSFUL","meta":{"configured":1},"_id":"qxhymbX6H2GXDw8Z"}
+        `;
+        fs.writeFileSync(options.databasePath, database);
+        await controller.start();
+        events.lastSeenChanged = [];
+        events.deviceNetworkAddressChanged = [];
+        const identifyUnknownDeviceSpy = vi.spyOn(controller, "identifyUnknownDevice");
+
+        const device = controller.getDeviceByIeeeAddr("0x0017880104e45517")!;
+        expect(device.networkAddress).toStrictEqual(nwkAddr);
+
+        device.removeFromDatabase();
+        expect(device.isDeleted).toStrictEqual(true);
+        expect(Device.isDeletedByIeeeAddr("0x0017880104e45517")).toStrictEqual(true);
+        expect(Device.isDeletedByNetworkAddress(nwkAddr)).toStrictEqual(true);
+
+        const frame2 = Zcl.Frame.create(
+            0,
+            1,
+            true,
+            undefined,
+            10,
+            "readRsp",
+            0,
+            [{attrId: 5, status: 0, dataType: 66, attrData: "new.model.id2"}],
+            {},
+        );
+        await mockAdapterEvents.zclPayload({
+            wasBroadcast: false,
+            address: nwkAddr,
+            clusterID: frame2.cluster.ID,
+            data: frame2.toBuffer(),
+            header: frame2.header,
+            endpoint: 1,
+            linkquality: 50,
+            groupID: 1,
+        });
+
+        expect(identifyUnknownDeviceSpy).toHaveBeenCalledTimes(0);
+        expect(mockLogger.debug).toHaveBeenCalledWith(`Data is from unknown device with address '${nwkAddr}', skipping...`, "zh:controller");
+    });
+
     it("reads/writes to group with custom cluster when common to all members", async () => {
         interface CustomManuHerdsman {
             attributes: {customAttr: number};
@@ -9268,7 +9349,7 @@ describe("Controller", () => {
             ID: 64513,
             commands: {},
             commandsResponse: {},
-            attributes: {customAttr: {ID: 0, type: Zcl.DataType.UINT8}},
+            attributes: {customAttr: {ID: 0, type: Zcl.DataType.UINT8, write: true}},
         });
 
         const group = controller.createGroup(34);
@@ -9510,7 +9591,7 @@ describe("Controller", () => {
             type: "commandIndividualLedEffect",
             data: {
                 color: 0,
-                duration: 255,
+                duration: null,
                 effect: 1,
                 led: 5,
                 level: 100,
@@ -9590,7 +9671,7 @@ describe("Controller", () => {
         await controller.start();
         mockAdapterSendZdo.mockClear();
 
-        controller.sendRaw({
+        await controller.sendRaw({
             profileId: Zdo.ZDO_PROFILE_ID,
             ieeeAddress: "0xf1f2f3f4f5f6f7f8",
             networkAddress: 129,
@@ -9607,7 +9688,7 @@ describe("Controller", () => {
         await controller.start();
         mocksendZclFrameInterPANToIeeeAddr.mockClear();
 
-        controller.sendRaw({
+        await controller.sendRaw({
             interPan: true,
             ieeeAddress: "0xf1f2f3f4f5f6f7f8",
             networkAddress: 129,
@@ -9639,7 +9720,7 @@ describe("Controller", () => {
         await controller.start();
         mocksendZclFrameInterPANBroadcast.mockClear();
 
-        controller.sendRaw({
+        await controller.sendRaw({
             interPan: true,
             zcl: {
                 commandKey: "scanRequest",
@@ -9668,7 +9749,7 @@ describe("Controller", () => {
         await controller.start();
         mocksendZclFrameToGroup.mockClear();
 
-        controller.sendRaw({
+        await controller.sendRaw({
             groupId: 123,
             clusterKey: "genScenes",
             srcEndpoint: 2,
@@ -9702,7 +9783,7 @@ describe("Controller", () => {
         await controller.start();
         mocksendZclFrameToAll.mockClear();
 
-        controller.sendRaw({
+        await controller.sendRaw({
             networkAddress: 0xfff8,
             clusterKey: Zcl.Clusters.genIdentify.ID,
             srcEndpoint: 1,
@@ -9735,7 +9816,7 @@ describe("Controller", () => {
         await controller.start();
         mocksendZclFrameToEndpoint.mockClear();
 
-        controller.sendRaw({
+        await controller.sendRaw({
             ieeeAddress: "0xf1f2f3f4f5f6f7f8",
             networkAddress: 129,
             clusterKey: Zcl.Clusters.genIdentify.ID,
@@ -9793,7 +9874,7 @@ describe("Controller", () => {
             },
         };
 
-        controller.sendRaw(
+        await controller.sendRaw(
             {
                 ieeeAddress: "0xf1f2f3f4f5f6f7f8",
                 networkAddress: 129,
@@ -9834,5 +9915,123 @@ describe("Controller", () => {
             ZSpec.HA_PROFILE_ID,
         );
         expect(deepClone(mocksendZclFrameToEndpoint.mock.calls[0][3])).toStrictEqual(deepClone(expectedFrame));
+    });
+
+    it("ignores invalid attributes when processing ZCL attribute", async () => {
+        await controller.start();
+        await mockAdapterEvents.deviceJoined({networkAddress: 178, ieeeAddr: "0x178"});
+        mockLogger.debug.mockClear();
+
+        const device = controller.getDeviceByIeeeAddr("0x178")!;
+        const frame = Zcl.Frame.create(
+            Zcl.FrameType.GLOBAL,
+            Zcl.Direction.CLIENT_TO_SERVER,
+            true,
+            undefined,
+            10,
+            "readRsp",
+            Zcl.Foundation.read.ID,
+            [{attrId: 0x0005, status: 0, dataType: 66, attrData: "a model id that is too long for spec"}],
+            {},
+        );
+
+        await mockAdapterEvents.zclPayload({
+            wasBroadcast: false,
+            address: "0x178",
+            clusterID: frame.cluster.ID,
+            data: frame.toBuffer(),
+            header: frame.header,
+            endpoint: 1,
+            linkquality: 50,
+            groupID: 0,
+        });
+
+        // coverage: prevent crash in onZclPayload when ZCL metadata validation fails
+        expect(mockLogger.debug).toHaveBeenCalledWith(
+            "Ignoring attribute modelId from response: Error: modelId requires max length of 32",
+            "zh:controller:zcl",
+        );
+        expect(device.genBasic.modelId).toStrictEqual(" other multi-endpoint device");
+    });
+
+    it("ensures manufacturer code is always unique in a single call", async () => {
+        await controller.start();
+        await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
+        const device = controller.getDeviceByIeeeAddr("0x129")!;
+        const endpoint = device.getEndpoint(1)!;
+        const zclCommandSpy = vi.spyOn(endpoint, "zclCommand");
+
+        const writePayload = {occupiedHeatingSetpoint: 2000, viessmannWindowOpenInternal: 1};
+        const writePayloadRaw = {viessmannWindowOpenInternal: 1, 0: {value: 1, type: Zcl.DataType.UINT16}};
+        const readPayload = ["localTemp" as const, "viessmannWindowOpenInternal" as const];
+        const readPayloadRaw = ["viessmannWindowOpenInternal" as const, 0];
+        const configureReportingPayload = [
+            {attribute: "localTemp" as const, minimumReportInterval: 1, maximumReportInterval: 10, reportableChange: 1},
+            {attribute: "viessmannWindowOpenInternal" as const, minimumReportInterval: 1, maximumReportInterval: 10, reportableChange: 1},
+        ];
+        const configureReportingPayloadRaw = [
+            {attribute: "viessmannWindowOpenInternal" as const, minimumReportInterval: 1, maximumReportInterval: 10, reportableChange: 1},
+            {attribute: {ID: 0, type: Zcl.DataType.UINT16}, minimumReportInterval: 1, maximumReportInterval: 10, reportableChange: 1},
+        ];
+        const readReportingConfigPayload = [{attribute: "localTemp" as const}, {attribute: "viessmannWindowOpenInternal" as const}];
+        const readReportingConfigPayloadRaw = [{attribute: "viessmannWindowOpenInternal" as const}, {attribute: {ID: 0}}];
+
+        //-- with internal manufacturer codes
+
+        await expect(endpoint.write("hvacThermostat", writePayload)).rejects.toThrow(
+            "Cannot have attributes with different manufacturerCode in single 'write' call",
+        );
+        await expect(endpoint.write("hvacThermostat", writePayloadRaw)).rejects.toThrow(
+            "Cannot have attributes with different manufacturerCode in single 'write' call",
+        );
+        await expect(endpoint.read("hvacThermostat", readPayload)).rejects.toThrow(
+            "Cannot have attributes with different manufacturerCode in single 'read' call",
+        );
+        await expect(endpoint.read("hvacThermostat", readPayloadRaw)).rejects.toThrow(
+            "Cannot have attributes with different manufacturerCode in single 'read' call",
+        );
+        await expect(endpoint.configureReporting("hvacThermostat", configureReportingPayload)).rejects.toThrow(
+            "Cannot have attributes with different manufacturerCode in single 'configureReporting' call",
+        );
+        await expect(endpoint.configureReporting("hvacThermostat", configureReportingPayloadRaw)).rejects.toThrow(
+            "Cannot have attributes with different manufacturerCode in single 'configureReporting' call",
+        );
+        await expect(endpoint.readReportingConfig("hvacThermostat", readReportingConfigPayload)).rejects.toThrow(
+            "Cannot have attributes with different manufacturerCode in single 'readReportingConfig' call",
+        );
+        await expect(endpoint.readReportingConfig("hvacThermostat", readReportingConfigPayloadRaw)).rejects.toThrow(
+            "Cannot have attributes with different manufacturerCode in single 'readReportingConfig' call",
+        );
+
+        //-- with override manufacturer code
+
+        const manufOpts = {manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH};
+
+        await expect(endpoint.write("hvacThermostat", writePayload, manufOpts)).rejects.toThrow(
+            "Cannot have attributes with different manufacturerCode in single 'write' call",
+        );
+        await expect(endpoint.write("hvacThermostat", writePayloadRaw, manufOpts)).rejects.toThrow(
+            "Cannot have attributes with different manufacturerCode in single 'write' call",
+        );
+        await expect(endpoint.read("hvacThermostat", readPayload, manufOpts)).rejects.toThrow(
+            "Cannot have attributes with different manufacturerCode in single 'read' call",
+        );
+        await expect(endpoint.read("hvacThermostat", readPayloadRaw, manufOpts)).rejects.toThrow(
+            "Cannot have attributes with different manufacturerCode in single 'read' call",
+        );
+        await expect(endpoint.configureReporting("hvacThermostat", configureReportingPayload, manufOpts)).rejects.toThrow(
+            "Cannot have attributes with different manufacturerCode in single 'configureReporting' call",
+        );
+        await expect(endpoint.configureReporting("hvacThermostat", configureReportingPayloadRaw, manufOpts)).rejects.toThrow(
+            "Cannot have attributes with different manufacturerCode in single 'configureReporting' call",
+        );
+        await expect(endpoint.readReportingConfig("hvacThermostat", readReportingConfigPayload, manufOpts)).rejects.toThrow(
+            "Cannot have attributes with different manufacturerCode in single 'readReportingConfig' call",
+        );
+        await expect(endpoint.readReportingConfig("hvacThermostat", readReportingConfigPayloadRaw, manufOpts)).rejects.toThrow(
+            "Cannot have attributes with different manufacturerCode in single 'readReportingConfig' call",
+        );
+
+        expect(zclCommandSpy).toHaveBeenCalledTimes(0);
     });
 });

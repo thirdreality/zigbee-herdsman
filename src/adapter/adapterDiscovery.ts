@@ -72,6 +72,7 @@ const USB_FINGERPRINTS: Record<DiscoverableUsbAdapter, UsbAdapterFingerprint[]> 
             manufacturer: "Nabu Casa",
             // /dev/serial/by-id/usb-Nabu_Casa_SkyConnect_v1.0_3abe54797c91ed118fc3cad13b20a111-if00-port0
             pathRegex: ".*Nabu_Casa_SkyConnect.*",
+            options: {rtscts: true},
         },
         {
             // Home Assistant Connect ZBT-2
@@ -91,6 +92,14 @@ const USB_FINGERPRINTS: Record<DiscoverableUsbAdapter, UsbAdapterFingerprint[]> 
         //     pathRegex: '.*.*',
         // },
         {
+            // SMLight slzb-06m* (all variants) USB-mode
+            vendorId: "10c4",
+            productId: "ea60",
+            manufacturer: "SMLIGHT",
+            pathRegex: ".*slzb-06m.*",
+            options: {rtscts: false},
+        },
+        {
             // SMLight slzb-07
             vendorId: "10c4",
             productId: "ea60",
@@ -98,6 +107,7 @@ const USB_FINGERPRINTS: Record<DiscoverableUsbAdapter, UsbAdapterFingerprint[]> 
             // /dev/serial/by-id/usb-SMLIGHT_SMLIGHT_SLZB-07_be9faa0786e1ea11bd68dc2d9a583111-if00-port0
             // /dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_a215650c853bec119a079e957a0af111-if00-port0
             pathRegex: ".*slzb-07_.*", // `_` to not match 07p7
+            options: {rtscts: true},
         },
         {
             // SMLight slzb-07mg24
@@ -105,6 +115,7 @@ const USB_FINGERPRINTS: Record<DiscoverableUsbAdapter, UsbAdapterFingerprint[]> 
             productId: "ea60",
             manufacturer: "SMLIGHT",
             pathRegex: ".*slzb-07mg24.*",
+            options: {rtscts: true},
         },
         {
             // Sonoff ZBDongle-E V2 (CH variant)
@@ -114,6 +125,7 @@ const USB_FINGERPRINTS: Record<DiscoverableUsbAdapter, UsbAdapterFingerprint[]> 
             // /dev/serial/by-id/usb-ITEAD_SONOFF_Zigbee_3.0_USB_Dongle_Plus_V2_20240122184111-if00
             // /dev/serial/by-id/usb-ITead_Sonoff_Zigbee_3.0_USB_Dongle_Plus_186ff44314e2ed11b891eb5162c61111-if00-port0
             pathRegex: ".*sonoff.*plus.*",
+            options: {rtscts: false},
         },
         {
             // Sonoff ZBDongle-E V2 (CP variant)
@@ -122,6 +134,7 @@ const USB_FINGERPRINTS: Record<DiscoverableUsbAdapter, UsbAdapterFingerprint[]> 
             manufacturer: "ITEAD",
             // /dev/serial/by-id/usb-Itead_Sonoff_Zigbee_3.0_USB_Dongle_Plus_V2_a6ee897e4d1fef11aa004ad0639e525b-if00-port0
             pathRegex: ".*sonoff.*plus_v2_.*",
+            options: {rtscts: false},
         },
         {
             // Sonoff ZBDongle-M
@@ -130,6 +143,7 @@ const USB_FINGERPRINTS: Record<DiscoverableUsbAdapter, UsbAdapterFingerprint[]> 
             manufacturer: "SONOFF",
             // /dev/serial/by-id/usb-SONOFF_SONOFF_Dongle_Max_MG24_08965d6b0674ef11b2f4e61e313510fd-if00-port0
             pathRegex: ".*sonoff.*max.*",
+            options: {rtscts: false},
         },
         {
             // SONOFF Dongle Plus MG24
@@ -138,6 +152,7 @@ const USB_FINGERPRINTS: Record<DiscoverableUsbAdapter, UsbAdapterFingerprint[]> 
             manufacturer: "SONOFF",
             // /dev/serial/by-id/usb-SONOFF_SONOFF_Dongle_Plus_MG24_b023a583a66bef118e30a3adc169b110-if00-port0
             pathRegex: ".*sonoff.*plus.*mg24.*",
+            options: {rtscts: false},
         },
         {
             // SONOFF Dongle Lite MG21
@@ -146,6 +161,7 @@ const USB_FINGERPRINTS: Record<DiscoverableUsbAdapter, UsbAdapterFingerprint[]> 
             manufacturer: "SONOFF",
             // /dev/serial/by-id/usb-SONOFF_SONOFF_Dongle_Lite_MG21_c82fc0a1a36bef11a026a1adc169b110-if00-port0
             pathRegex: ".*sonoff.*lite.*mg21.*",
+            options: {rtscts: false},
         },
         // {
         //     // TODO: Z-station by z-wave.me (EFR32MG21A020F1024IM32)
@@ -296,11 +312,6 @@ const USB_FINGERPRINTS: Record<DiscoverableUsbAdapter, UsbAdapterFingerprint[]> 
     ],
 };
 
-/**
- * Vendor and Product IDs that are prone to conflict if only matching on vendorId+productId.
- */
-const USB_FINGERPRINTS_CONFLICT_IDS: ReadonlyArray<string /* vendorId:productId */> = ["10c4:ea60"];
-
 /** Time allotted for mDNS scanning */
 const MDNS_SCAN_TIME = 2000;
 
@@ -316,6 +327,24 @@ async function getSerialPortList(): Promise<PortInfo[]> {
     portInfos.sort((a, b) => (a.path < b.path ? -1 : 1));
 
     return portInfos;
+}
+
+/**
+ * Match on Vendor and Product IDs that are prone to conflict if only matching on vendorId+productId.
+ * @param vendorId
+ * @param productId
+ * @returns True if conflict-prone
+ */
+function matchConflictProne(vendorId: string | undefined, productId: string | undefined): boolean {
+    if (!vendorId || !productId) {
+        return true; // can't match, no point looking it up (logic is expected to handle this further down the chain)
+    }
+
+    const lcVendorId = vendorId.toLowerCase();
+    const lcProductId = productId.toLowerCase();
+
+    // can add more check-pairs as needed
+    return lcVendorId === "10c4" && lcProductId === "ea60";
 }
 
 /**
@@ -430,8 +459,12 @@ export async function matchUsbAdapter(adapter: Adapter, path: string): Promise<U
             continue;
         }
 
-        const conflictProne = USB_FINGERPRINTS_CONFLICT_IDS.includes(`${portInfo.vendorId}:${portInfo.productId}`);
-        const match = matchUsbFingerprint(portInfo, USB_FINGERPRINTS[adapter === "ezsp" ? "ember" : adapter], isWindows, conflictProne);
+        const match = matchUsbFingerprint(
+            portInfo,
+            USB_FINGERPRINTS[adapter === "ezsp" ? "ember" : adapter],
+            isWindows,
+            matchConflictProne(portInfo.vendorId, portInfo.productId),
+        );
 
         if (match) {
             logger.info(() => `Matched adapter: ${JSON.stringify(portInfo)} => ${adapter}: ${JSON.stringify(match[1])}`, NS);
@@ -446,9 +479,9 @@ export function findUsbAdapterBestMatch(
     adapter: Adapter | undefined,
     portInfo: PortInfo,
     isWindows: boolean,
-    conflictProne: boolean,
 ): [DiscoverableUsbAdapter, NonNullable<ReturnType<typeof matchUsbFingerprint>>] | undefined {
     let bestMatch: [DiscoverableUsbAdapter, NonNullable<ReturnType<typeof matchUsbFingerprint>>] | undefined;
+    const conflictProne = matchConflictProne(portInfo.vendorId, portInfo.productId);
 
     for (const key in USB_FINGERPRINTS) {
         if (adapter && adapter !== key) {
@@ -480,26 +513,33 @@ export async function findUsbAdapter(adapter?: Adapter, path?: string): Promise<
 
     logger.debug(() => `Connected devices: ${JSON.stringify(portList)}`, NS);
 
+    let bestMatch: ReturnType<typeof findUsbAdapterBestMatch> | undefined;
+
     for (const portInfo of portList) {
         if (path && portInfo.path !== path) {
             continue;
         }
 
-        const conflictProne = USB_FINGERPRINTS_CONFLICT_IDS.includes(`${portInfo.vendorId}:${portInfo.productId}`);
-        const bestMatch = findUsbAdapterBestMatch(adapter, portInfo, isWindows, conflictProne);
+        const match = findUsbAdapterBestMatch(adapter, portInfo, isWindows);
 
-        if (bestMatch) {
-            logger.info(
-                () => `Matched adapter: ${JSON.stringify(portInfo)} => ${bestMatch[0]}: path=${bestMatch[1][0]}, score=${bestMatch[1][1]}`,
-                NS,
-            );
-            return {
-                adapter: bestMatch[0],
-                path: bestMatch[1][0],
-                rtscts: bestMatch[1][2].options?.rtscts,
-                baudRate: bestMatch[1][2].options?.baudRate,
-            };
+        if (match && (!bestMatch || bestMatch[1][1] < match[1][1])) {
+            bestMatch = match;
+
+            if (match[1][1] === UsbFingerprintMatchScore.VidPidManufPath) {
+                // got best possible match, exit loop
+                break;
+            }
         }
+    }
+
+    if (bestMatch) {
+        logger.info(() => `Matched adapter=${bestMatch[0]} path=${bestMatch[1][0]}, score=${bestMatch[1][1]}`, NS);
+        return {
+            adapter: bestMatch[0],
+            path: bestMatch[1][0],
+            rtscts: bestMatch[1][2].options?.rtscts,
+            baudRate: bestMatch[1][2].options?.baudRate,
+        };
     }
 }
 
@@ -629,11 +669,13 @@ export async function discoverAdapter(adapter?: Adapter, path?: string): Promise
     }
 }
 
+type AllDevices = (TsType.SerialPortOptions & {name: string; path: string})[];
+
 /**
  * @returns List of all serial and mDNS devices found, with matching `adapter` if available
  */
-export async function findAllDevices(): Promise<{name: string; path: string; adapter?: Adapter}[]> {
-    const devices: {name: string; path: string; adapter?: Adapter}[] = [];
+export async function findAllDevices(): Promise<AllDevices> {
+    const devices: AllDevices = [];
     const isWindows = platform() === "win32";
 
     try {
@@ -641,22 +683,34 @@ export async function findAllDevices(): Promise<{name: string; path: string; ada
 
         for (const portInfo of portList) {
             // override matching on Windows, too many chances of mismatch due to lacking data
-            const bestMatch = isWindows
-                ? undefined
-                : findUsbAdapterBestMatch(
-                      undefined,
-                      portInfo,
-                      isWindows,
-                      USB_FINGERPRINTS_CONFLICT_IDS.includes(`${portInfo.vendorId}:${portInfo.productId}`),
-                  );
+            const bestMatch = isWindows ? undefined : findUsbAdapterBestMatch(undefined, portInfo, isWindows);
             // @ts-expect-error friendlyName Windows only
             const friendlyName = portInfo.friendlyName ?? portInfo.pnpId;
-
-            devices.push({
+            const device: AllDevices[number] = {
                 name: `${friendlyName} (${portInfo.manufacturer})`,
                 path: portInfo.path,
-                adapter: bestMatch ? bestMatch[0] : undefined,
-            });
+            };
+
+            if (bestMatch) {
+                const adapter = bestMatch[0];
+                const options = bestMatch[1][2].options;
+
+                if (adapter) {
+                    device.adapter = adapter;
+                }
+
+                if (options) {
+                    if (options.baudRate !== undefined) {
+                        device.baudRate = options.baudRate;
+                    }
+
+                    if (options.rtscts !== undefined) {
+                        device.rtscts = options.rtscts;
+                    }
+                }
+            }
+
+            devices.push(device);
         }
         /* v8 ignore start */
     } catch (error) {

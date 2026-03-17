@@ -1,7 +1,10 @@
+import {logger} from "../../utils/logger";
 import * as Zcl from "../../zspec/zcl";
 import type {TFoundation} from "../../zspec/zcl/definition/clusters-types";
 import type {Cluster, CustomClusters} from "../../zspec/zcl/definition/tstype";
 import type {ClusterOrRawWriteAttributes, TCustomCluster} from "../tstype";
+
+const NS = "zh:controller:zcl";
 
 // Legrand devices (e.g. 4129) fail to set the manufacturerSpecific flag and
 // manufacturerCode in the frame header, despite using specific attributes.
@@ -26,7 +29,19 @@ function attributeKeyValue<Cl extends number | string, Custom extends TCustomClu
 
     // TODO: remove this type once Zcl.Frame is typed
     for (const item of frame.payload as TFoundation["report" | "write" | "readRsp"]) {
-        payload[cluster.getAttribute(item.attrId)?.name ?? item.attrId] = item.attrData;
+        const attribute = cluster.getAttribute(item.attrId);
+
+        if (attribute) {
+            try {
+                const attrData = Zcl.Utils.processAttributePostRead(attribute, item.attrData);
+
+                payload[attribute.name] = attrData;
+            } catch (error) {
+                logger.debug(`Ignoring attribute ${attribute.name} from response: ${error}`, NS);
+            }
+        } else {
+            payload[item.attrId] = item.attrData;
+        }
     }
 
     return payload as ClusterOrRawWriteAttributes<Cl, Custom>;
@@ -38,7 +53,9 @@ function attributeList(frame: Zcl.Frame, deviceManufacturerID: number | undefine
 
     // TODO: remove this type once Zcl.Frame is typed
     for (const item of frame.payload as TFoundation["read"]) {
-        payload.push(cluster.getAttribute(item.attrId)?.name ?? item.attrId);
+        const attribute = cluster.getAttribute(item.attrId);
+
+        payload.push(attribute?.name ?? item.attrId);
     }
 
     return payload;

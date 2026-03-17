@@ -1,8 +1,8 @@
 /* v8 ignore start */
 
 import {EventEmitter} from "node:events";
-
-import {Queue, Waitress, wait} from "../../../utils";
+import {Waitress, wait} from "../../../utils";
+import {AsyncMutex} from "../../../utils/async-mutex";
 import {logger} from "../../../utils/logger";
 import type {SerialPortOptions} from "../../tstype";
 import {
@@ -321,14 +321,14 @@ export class Ezsp extends EventEmitter {
     // COMMANDS_BY_ID = new Map<number, { name: string, inArgs: any[], outArgs: any[] }>();
     private serialDriver: SerialDriver;
     private waitress: Waitress<EZSPFrame, EZSPWaitressMatcher>;
-    private queue: Queue;
+    private queue: AsyncMutex;
     private watchdogTimer?: NodeJS.Timeout;
     private failures = 0;
     private inResetingProcess = false;
 
     constructor() {
         super();
-        this.queue = new Queue();
+        this.queue = new AsyncMutex();
         this.waitress = new Waitress<EZSPFrame, EZSPWaitressMatcher>(this.waitressValidator, this.waitressTimeoutFormatter);
 
         this.serialDriver = new SerialDriver();
@@ -475,7 +475,7 @@ export class Ezsp extends EventEmitter {
         const waiter = this.waitFor("stackStatusHandler", null);
         const result = await this.execCommand("networkInit");
 
-        logger.debug(`Network init result: ${JSON.stringify(result)}`, NS);
+        logger.debug(() => `Network init result: ${JSON.stringify(result)}`, NS);
 
         if (result.status !== EmberStatus.SUCCESS) {
             this.waitress.remove(waiter.ID);
@@ -492,7 +492,7 @@ export class Ezsp extends EventEmitter {
         const waiter = this.waitFor("stackStatusHandler", null);
         const result = await this.execCommand("leaveNetwork");
 
-        logger.debug(`Network init result: ${JSON.stringify(result)}`, NS);
+        logger.debug(() => `Network init result: ${JSON.stringify(result)}`, NS);
 
         if (result.status !== EmberStatus.SUCCESS) {
             this.waitress.remove(waiter.ID);
@@ -665,7 +665,7 @@ export class Ezsp extends EventEmitter {
             throw new Error("Connection not initialized");
         }
 
-        return await this.queue.execute<EZSPFrameData>(async (): Promise<EZSPFrameData> => {
+        return await this.queue.run<EZSPFrameData>(async (): Promise<EZSPFrameData> => {
             const data = this.makeFrame(name, params, this.cmdSeq);
             const waiter = this.waitFor(name, this.cmdSeq);
             this.cmdSeq = (this.cmdSeq + 1) & 255;
@@ -737,7 +737,7 @@ export class Ezsp extends EventEmitter {
             maxHops: 0,
         });
 
-        logger.debug(`Set concentrator type: ${JSON.stringify(res)}`, NS);
+        logger.debug(() => `Set concentrator type: ${JSON.stringify(res)}`, NS);
 
         if (res.status !== EmberStatus.SUCCESS) {
             logger.error(`Couldn't set concentrator ${JSON.stringify(res)}`, NS);

@@ -29,15 +29,6 @@ const Type = UnpiConstants.Type;
 const {ZnpCommandStatus, AddressMode} = Constants.COMMON;
 
 const DataConfirmTimeout = 9999; // Not an actual code
-const DataConfirmErrorCodeLookup: {[k: number]: string} = {
-    [DataConfirmTimeout]: "Timeout",
-    26: "MAC no resources",
-    183: "APS no ack",
-    205: "No network route",
-    225: "MAC channel access failure",
-    233: "MAC no ack",
-    240: "MAC transaction expired",
-};
 
 interface WaitressMatcher {
     address?: number | string;
@@ -52,7 +43,8 @@ interface WaitressMatcher {
 class DataConfirmError extends Error {
     public code: number;
     constructor(code: number) {
-        const message = `Data request failed with error: '${DataConfirmErrorCodeLookup[code]}' (${code})`;
+        const error = code === DataConfirmTimeout ? "'TIMEOUT'" : `'${ZnpCommandStatus[code]}' (0x${code.toString(16)})`;
+        const message = `Data request failed with error: ${error}`;
         super(message);
         this.code = code;
     }
@@ -131,7 +123,7 @@ export class ZStackAdapter extends Adapter {
 
         this.queue = new Queue(concurrent);
 
-        logger.debug(`Detected znp version '${ZnpVersion[this.version.product]}' (${JSON.stringify(this.version)})`, NS);
+        logger.debug(() => `Detected znp version '${ZnpVersion[this.version.product]}' (${JSON.stringify(this.version)})`, NS);
         this.adapterManager = new ZnpAdapterManager(this, this.znp, {
             backupPath: this.backupPath,
             version: this.version.product,
@@ -871,9 +863,11 @@ export class ZStackAdapter extends Adapter {
                             // to rediscover the route every time.
                             const debouncer = debounce(
                                 () => {
-                                    this.queue.execute<void>(async () => {
-                                        await this.discoverRoute(zdoPayload.nwkAddress, false).catch(() => {});
-                                    }, zdoPayload.nwkAddress);
+                                    this.queue
+                                        .execute<void>(async () => {
+                                            await this.discoverRoute(zdoPayload.nwkAddress, false).catch(() => {});
+                                        }, zdoPayload.nwkAddress)
+                                        .catch(() => {});
                                 },
                                 60 * 1000,
                                 {immediate: true},
@@ -960,30 +954,32 @@ export class ZStackAdapter extends Adapter {
                         // must be retrieved block by block from the ZNP buffer using the
                         // AF_DATA_RETRIEVE message.
 
-                        this.queue.execute<void>(async () => {
-                            const data = await this.dataRetrieveAll(object.payload.timestamp, object.payload.len);
-                            if (data === undefined) {
-                                logger.error("Failed to retrieve chunked payload for incomingMsgExt", NS);
-                            } else {
-                                logger.debug(
-                                    `Retrieved ${data.length} bytes from huge data buffer for msg with timestamp ${object.payload.timestamp}`,
-                                    NS,
-                                );
-                                const payload: Events.ZclPayload = {
-                                    clusterID: object.payload.clusterid,
-                                    data: data,
-                                    header: Zcl.Header.fromBuffer(data),
-                                    address: srcaddr,
-                                    endpoint: object.payload.srcendpoint,
-                                    linkquality: object.payload.linkquality,
-                                    groupID: object.payload.groupid,
-                                    wasBroadcast: object.payload.wasbroadcast === 1,
-                                    destinationEndpoint: object.payload.dstendpoint,
-                                };
-                                this.waitress.resolve(payload);
-                                this.emit("zclPayload", payload);
-                            }
-                        });
+                        this.queue
+                            .execute<void>(async () => {
+                                const data = await this.dataRetrieveAll(object.payload.timestamp, object.payload.len);
+                                if (data === undefined) {
+                                    logger.error("Failed to retrieve chunked payload for incomingMsgExt", NS);
+                                } else {
+                                    logger.debug(
+                                        `Retrieved ${data.length} bytes from huge data buffer for msg with timestamp ${object.payload.timestamp}`,
+                                        NS,
+                                    );
+                                    const payload: Events.ZclPayload = {
+                                        clusterID: object.payload.clusterid,
+                                        data: data,
+                                        header: Zcl.Header.fromBuffer(data),
+                                        address: srcaddr,
+                                        endpoint: object.payload.srcendpoint,
+                                        linkquality: object.payload.linkquality,
+                                        groupID: object.payload.groupid,
+                                        wasBroadcast: object.payload.wasbroadcast === 1,
+                                        destinationEndpoint: object.payload.dstendpoint,
+                                    };
+                                    this.waitress.resolve(payload);
+                                    this.emit("zclPayload", payload);
+                                }
+                            })
+                            .catch(() => {});
                     } else {
                         // incomingMsg OR incomingMsgExt with data
                         // in the payload (i.e. INTER_PAN network)

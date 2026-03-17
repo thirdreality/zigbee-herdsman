@@ -253,6 +253,22 @@ export class Endpoint extends ZigbeeEntity {
             }
         }
 
+        // Migrate cluster renames from https://github.com/Koenkk/zigbee-herdsman/pull/1503 @deprecated 3.0
+        /* v8 ignore start */
+        if (record.clusters.piRetailTunnel) {
+            record.clusters.retailTunnel = record.clusters.piRetailTunnel;
+            delete record.clusters.piRetailTunnel;
+        }
+        if (record.clusters.tunneling) {
+            record.clusters.seTunneling = record.clusters.tunneling;
+            delete record.clusters.tunneling;
+        }
+        if (record.clusters.haMeterIdentification) {
+            record.clusters.seMeterIdentification = record.clusters.haMeterIdentification;
+            delete record.clusters.haMeterIdentification;
+        }
+        /* v8 ignore stop */
+
         return new Endpoint(
             record.epId,
             record.profId,
@@ -453,6 +469,8 @@ export class Endpoint extends ZigbeeEntity {
         const cluster = this.getCluster(clusterKey, undefined, options?.manufacturerCode);
         const payload: TFoundation["report"] = [];
 
+        // TODO: handle `attr.report !== true`
+
         for (const nameOrID in attributes) {
             const attribute = cluster.getAttribute(nameOrID);
 
@@ -489,7 +507,10 @@ export class Endpoint extends ZigbeeEntity {
             const attribute = cluster.getAttribute(nameOrID);
 
             if (attribute) {
-                payload.push({attrId: attribute.ID, attrData: attributes[nameOrID], dataType: attribute.type});
+                // TODO: handle `attr.writeOptional !== true`
+                const attrData = Zcl.Utils.processAttributeWrite(attribute, attributes[nameOrID]);
+
+                payload.push({attrId: attribute.ID, attrData, dataType: attribute.type});
             } else if (!Number.isNaN(Number(nameOrID))) {
                 const value = attributes[nameOrID];
 
@@ -558,6 +579,8 @@ export class Endpoint extends ZigbeeEntity {
         );
         const payload: TFoundation["read"] = [];
 
+        // TODO: handle `attr.required !== true` => should not throw
+
         for (const attribute of attributes) {
             if (typeof attribute === "number") {
                 payload.push({attrId: attribute});
@@ -565,6 +588,7 @@ export class Endpoint extends ZigbeeEntity {
                 const attr = cluster.getAttribute(attribute);
 
                 if (attr) {
+                    Zcl.Utils.processAttributePreRead(attr);
                     payload.push({attrId: attr.ID});
                 } else {
                     logger.warning(`Ignoring unknown attribute ${attribute} in cluster ${cluster.name}`, NS);
@@ -712,25 +736,26 @@ export class Endpoint extends ZigbeeEntity {
         this.getDevice().save();
     }
 
-    public async unbind(clusterKey: number | string, target: Endpoint | Group | number): Promise<void> {
+    public async unbind(clusterKey: number | string, target: Endpoint | Group | number, force = false): Promise<void> {
+        // When force is true the unbind is done even when the bind is not in the bind list, additionally when the target is a number
+        // it will not check if the group exists.
         const cluster = this.getCluster(clusterKey);
         const action = `Unbind ${this.deviceIeeeAddress}/${this.ID} ${cluster.name}`;
 
         if (typeof target === "number") {
             const groupTarget = Group.byGroupID(target);
-
-            if (!groupTarget) {
+            if (groupTarget) {
+                target = groupTarget;
+            } else if (!force) {
                 throw new Error(`${action} invalid target '${target}' (no group with this ID exists).`);
             }
-
-            target = groupTarget;
         }
 
-        const destinationAddress = target instanceof Endpoint ? target.deviceIeeeAddress : target.groupID;
+        const destinationAddress = target instanceof Endpoint ? target.deviceIeeeAddress : target instanceof Group ? target.groupID : target;
         const log = `${action} from '${target instanceof Endpoint ? `${destinationAddress}/${target.ID}` : destinationAddress}'`;
-        const index = this.getBindIndex(cluster.ID, target);
+        const index = target instanceof Endpoint || target instanceof Group ? this.getBindIndex(cluster.ID, target) : -1;
 
-        if (index === -1) {
+        if (index === -1 && !force) {
             logger.debug(`${log} no bind present, skipping.`, NS);
             return;
         }
@@ -747,7 +772,7 @@ export class Endpoint extends ZigbeeEntity {
                 cluster.ID,
                 target instanceof Endpoint ? Zdo.UNICAST_BINDING : Zdo.MULTICAST_BINDING,
                 target instanceof Endpoint ? (target.deviceIeeeAddress as Eui64) : ZSpec.BLANK_EUI64,
-                target instanceof Group ? target.groupID : 0,
+                target instanceof Group ? target.groupID : typeof target === "number" ? target : 0,
                 target instanceof Endpoint ? target.ID : 0xff,
             );
 
@@ -761,8 +786,10 @@ export class Endpoint extends ZigbeeEntity {
                 }
             }
 
-            this._binds.splice(index, 1);
-            this.save();
+            if (index !== -1) {
+                this._binds.splice(index, 1);
+                this.save();
+            }
         } catch (error) {
             const err = error as Error;
             err.message = `${log} failed (${err.message})`;
@@ -971,43 +998,6 @@ export class Endpoint extends ZigbeeEntity {
         }
     }
 
-    public waitForCommand(
-        clusterKey: number | string,
-        commandKey: number | string,
-        transactionSequenceNumber: number | undefined,
-        timeout: number,
-    ): {promise: Promise<{header: Zcl.Header; payload: KeyValue}>; cancel: () => void} {
-        const device = this.getDevice();
-        const cluster = this.getCluster(clusterKey, device);
-        const command = cluster.getCommand(commandKey);
-        const waiter = Entity.adapter.waitFor(
-            this.deviceNetworkAddress,
-            this.ID,
-            Zcl.FrameType.SPECIFIC,
-            Zcl.Direction.CLIENT_TO_SERVER,
-            transactionSequenceNumber,
-            cluster.ID,
-            command.ID,
-            timeout,
-        );
-
-        const promise = new Promise<{header: Zcl.Header; payload: KeyValue}>((resolve, reject) => {
-            waiter.promise.then(
-                (payload) => {
-                    try {
-                        const frame = Zcl.Frame.fromBuffer(payload.clusterID, payload.header, payload.data, device.customClusters);
-                        resolve({header: frame.header, payload: frame.payload});
-                    } catch (error) {
-                        reject(error);
-                    }
-                },
-                (error) => reject(error),
-            );
-        });
-
-        return {promise, cancel: waiter.cancel};
-    }
-
     private getOptionsWithDefaults(
         options: Options | undefined,
         disableDefaultResponse: boolean,
@@ -1035,39 +1025,48 @@ export class Endpoint extends ZigbeeEntity {
         fallbackManufacturerCode: number | undefined, // XXX: problematic undefined for a "fallback"?
         caller: string,
     ): number | undefined {
-        const manufacturerCodes = new Set(
-            attributes.map((nameOrID): number | undefined => {
-                let attributeID: number | string;
+        let firstManufacturerCode: number | undefined;
+        let codeSet = false;
 
-                if (typeof nameOrID === "object") {
-                    // ConfigureReportingItem
-                    if (typeof nameOrID.attribute !== "object") {
-                        attributeID = nameOrID.attribute;
-                    } else {
-                        return fallbackManufacturerCode;
-                    }
+        for (const nameOrID of attributes) {
+            let attributeID: number | string;
+
+            if (typeof nameOrID === "object") {
+                // ConfigureReportingItem
+                if (typeof nameOrID.attribute !== "object") {
+                    attributeID = nameOrID.attribute;
                 } else {
-                    // string || number
-                    attributeID = nameOrID;
+                    if (!codeSet) {
+                        firstManufacturerCode = fallbackManufacturerCode;
+                        codeSet = true;
+                    } else if (firstManufacturerCode !== fallbackManufacturerCode) {
+                        throw new Error(`Cannot have attributes with different manufacturerCode in single '${caller}' call`);
+                    }
+
+                    continue;
                 }
+            } else {
+                // string || number
+                attributeID = nameOrID;
+            }
 
-                // we fall back to caller|cluster provided manufacturerCode
-                const attribute = cluster.getAttribute(attributeID);
+            // we fall back to caller|cluster provided manufacturerCode
+            const attribute = cluster.getAttribute(attributeID);
+            const manufacturerCode = attribute
+                ? attribute.manufacturerCode === undefined
+                    ? fallbackManufacturerCode
+                    : attribute.manufacturerCode
+                : fallbackManufacturerCode;
 
-                if (attribute) {
-                    return attribute.manufacturerCode === undefined ? fallbackManufacturerCode : attribute.manufacturerCode;
-                }
-
-                // unknown attribute, we should not fail on this here
-                return fallbackManufacturerCode;
-            }),
-        );
-
-        if (manufacturerCodes.size === 1) {
-            return manufacturerCodes.values().next().value;
+            if (!codeSet) {
+                firstManufacturerCode = manufacturerCode;
+                codeSet = true;
+            } else if (firstManufacturerCode !== manufacturerCode) {
+                throw new Error(`Cannot have attributes with different manufacturerCode in single '${caller}' call`);
+            }
         }
 
-        throw new Error(`Cannot have attributes with different manufacturerCode in single '${caller}' call`);
+        return firstManufacturerCode;
     }
 
     public async addToGroup(group: Group): Promise<void> {

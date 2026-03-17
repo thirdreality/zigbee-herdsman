@@ -32,7 +32,7 @@ const NS = "zh:deconz:driver";
 
 const queue: Array<Request> = [];
 export const busyQueue: Array<Request> = [];
-const apsQueue: Array<ApsRequest> = [];
+export const apsQueue: Array<ApsRequest> = [];
 export const apsBusyQueue: Array<ApsRequest> = [];
 
 const DRIVER_EVENT = Symbol("drv_ev");
@@ -326,7 +326,7 @@ class Driver extends events.EventEmitter {
             this.handleApsQueueOnDeviceState();
         } else if (event === DriverEvent.Tick) {
             if (this.needWatchdogReset()) {
-                this.resetWatchdog();
+                this.resetWatchdog().catch(() => {});
             }
 
             this.processQueue();
@@ -372,6 +372,7 @@ class Driver extends events.EventEmitter {
                 this.driverState = DriverState.WaitToReconnect;
             }
 
+            // biome-ignore lint/nursery/noMisusedPromises: ignore
             if (prom) {
                 prom.catch((err) => {
                     logger.debug(`${err}`, NS);
@@ -748,7 +749,7 @@ class Driver extends events.EventEmitter {
                 // if the connection is open try to close it every second.
                 this.driverStateStart = Date.now();
                 if (this.isOpen()) {
-                    this.close();
+                    this.close().catch(() => {});
                 } else {
                     this.driverState = DriverState.WaitToReconnect;
                 }
