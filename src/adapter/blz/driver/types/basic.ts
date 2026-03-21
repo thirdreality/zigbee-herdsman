@@ -203,11 +203,11 @@ class _LVList extends List {
 
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
 export function list(itemtype: any): List {
-    class ConreteList extends List {
+    class ConcreteList extends List {
         static itemtype = itemtype;
     }
 
-    return ConreteList;
+    return ConcreteList;
 }
 
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/

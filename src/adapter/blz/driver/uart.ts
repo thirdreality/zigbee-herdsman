@@ -15,18 +15,6 @@ import { FRAMES } from "./commands";
 
 const NS = "zh:blz:uart";
 
-enum NcpResetCode {
-  RESET_UNKNOWN_REASON = 0x00,
-  RESET_EXTERNAL = 0x01,
-  RESET_POWER_ON = 0x02,
-  RESET_WATCHDOG = 0x03,
-  RESET_ASSERT = 0x06,
-  RESET_BOOTLOADER = 0x09,
-  RESET_SOFTWARE = 0x0b,
-  ERROR_EXCEEDED_MAXIMUM_ACK_TIMEOUT_COUNT = 0x51,
-  ERROR_UNKNOWN_EM3XX_ERROR = 0x80,
-}
-
 type BLZPacket = {
   frameId: number;
 };

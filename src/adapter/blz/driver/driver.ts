@@ -499,15 +499,6 @@ export class Driver extends EventEmitter {
     logger.debug(`handleNetworkStatus: networkStatusCode=${status}`, NS);
   }
 
-  // private handleNodeLeft(nwk: number, ieee: BlzEUI64 | number[]): void {
-  //     if (ieee && !(ieee instanceof BlzEUI64)) {
-  //         ieee = new BlzEUI64(ieee);
-  //     }
-
-  //     this.eui64ToNodeId.delete(ieee.toString());
-  //     this.emit('deviceLeft', nwk, ieee);
-  // }
-
   public handleNodeJoined(nwk: number, ieee: number): void {
     const ieeeAddr = `${ieee.toString(16).padStart(16, "0")}`;
     const ieeeAddrstring = `0x${ieee.toString(16).padStart(16, "0")}`;
