@@ -51,7 +51,7 @@ export class BLZAdapter extends Adapter {
   ) {
     super(networkOptions, serialPortOptions, backupPath, adapterOptions);
     this.hasZdoMessageOverhead = true;
-    this.manufacturerID = Zcl.ManufacturerCode.SILICON_LABORATORIES;
+    this.manufacturerID = Zcl.ManufacturerCode.BOUFFALO_LAB_NANJING_CO_LTD;
 
     this.waitress = new Waitress<ZclPayload, WaitressMatcher>(
       this.waitressValidator,
@@ -113,26 +113,30 @@ export class BLZAdapter extends Adapter {
   }
 
   private async handleDeviceJoin(nwk: number, ieee: BlzEUI64): Promise<void> {
-    logger.debug(
-      () => `Device join request received: ${nwk} ${ieee.toString()}`,
-      NS,
-    );
+    // Driver emits ieee as "0x" prefixed string, use as-is
+    const ieeeAddr = ieee.toString().startsWith("0x")
+      ? ieee.toString()
+      : `0x${ieee.toString()}`;
+    logger.debug(() => `Device join request received: ${nwk} ${ieeeAddr}`, NS);
 
     this.emit("deviceJoined", {
       networkAddress: nwk,
-      ieeeAddr: `${ieee.toString()}`,
+      ieeeAddr,
     });
   }
 
   private handleDeviceLeft(nwk: number, ieee: BlzEUI64): void {
+    const ieeeAddr = ieee.toString().startsWith("0x")
+      ? ieee.toString()
+      : `0x${ieee.toString()}`;
     logger.debug(
-      () => `Device left network request received: ${nwk} ${ieee.toString()}`,
+      () => `Device left network request received: ${nwk} ${ieeeAddr}`,
       NS,
     );
 
     this.emit("deviceLeave", {
       networkAddress: nwk,
-      ieeeAddr: `0x${ieee.toString()}`,
+      ieeeAddr,
     });
   }
 
