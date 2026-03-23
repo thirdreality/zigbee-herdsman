@@ -414,7 +414,10 @@ export class Driver extends EventEmitter {
               const eui64 = zdoResponse[1].eui64;
 
               // update cache with new network address
-              this.eui64ToNodeId.set(this.normalizeIeee(eui64), frame.srcShortAddr);
+              this.eui64ToNodeId.set(
+                this.normalizeIeee(eui64),
+                frame.srcShortAddr,
+              );
 
               this.waitress.resolve({
                 address: eui64,
@@ -469,8 +472,22 @@ export class Driver extends EventEmitter {
         break;
       }
       case frameName === "deviceJoinCallback": {
-        logger.debug(`Device joined callback is received`, NS);
-        this.handleNodeJoined(frame.nodeId, frame.eui64);
+        // NCP sends both join and leave through the same frame ID (0x0036).
+        // status=0x00: UNSECURED_JOIN, status=0x01: REJOIN, status=0x03: LEAVE
+        if (frame.status === 0x03) {
+          const ieeeAddr = `0x${frame.eui64.toString(16).padStart(16, "0")}`;
+          logger.debug(
+            `Device left callback received: nwk=0x${frame.nodeId.toString(16)} ieee=${ieeeAddr}`,
+            NS,
+          );
+          this.handleNodeLeft(frame.nodeId, ieeeAddr);
+        } else {
+          logger.debug(
+            `Device joined callback received: status=${frame.status}`,
+            NS,
+          );
+          this.handleNodeJoined(frame.nodeId, frame.eui64);
+        }
         break;
       }
       case frameName === "nwkStatusCallback": {
