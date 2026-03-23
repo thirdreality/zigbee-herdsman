@@ -187,8 +187,12 @@ export class Driver extends EventEmitter {
     logger.debug("Stopping driver", NS);
 
     if (this.blz) {
-      return await this.blz.close(emitClose);
+      this.blz.removeAllListeners();
+      await this.blz.close(emitClose);
     }
+
+    // Clear pending waiters to avoid dangling promises/timers
+    this.waitress.clear();
   }
 
   public async startup(): Promise<TsType.StartResult> {
@@ -410,7 +414,7 @@ export class Driver extends EventEmitter {
               const eui64 = zdoResponse[1].eui64;
 
               // update cache with new network address
-              this.eui64ToNodeId.set(eui64, frame.srcShortAddr);
+              this.eui64ToNodeId.set(this.normalizeIeee(eui64), frame.srcShortAddr);
 
               this.waitress.resolve({
                 address: eui64,
@@ -499,12 +503,23 @@ export class Driver extends EventEmitter {
     logger.debug(`handleNetworkStatus: networkStatusCode=${status}`, NS);
   }
 
+  /** Normalize IEEE address to consistent format (no 0x prefix, lowercase). */
+  private normalizeIeee(ieee: string): string {
+    return ieee.replace(/^0x/i, "").toLowerCase();
+  }
+
   public handleNodeJoined(nwk: number, ieee: number): void {
-    const ieeeAddr = `${ieee.toString(16).padStart(16, "0")}`;
-    const ieeeAddrstring = `0x${ieee.toString(16).padStart(16, "0")}`;
-    logger.debug(`deviceJoined, 0x${nwk.toString(16)}, 0x${ieeeAddr}`, NS);
-    this.eui64ToNodeId.set(ieeeAddr, nwk);
-    this.emit("deviceJoined", nwk, ieeeAddrstring);
+    const ieeeAddr = ieee.toString(16).padStart(16, "0");
+    const ieeeAddrFull = `0x${ieeeAddr}`;
+    logger.debug(`deviceJoined, 0x${nwk.toString(16)}, ${ieeeAddrFull}`, NS);
+    this.eui64ToNodeId.set(this.normalizeIeee(ieeeAddr), nwk);
+    this.emit("deviceJoined", nwk, ieeeAddrFull);
+  }
+
+  public handleNodeLeft(nwk: number, ieeeAddr: string): void {
+    this.eui64ToNodeId.delete(this.normalizeIeee(ieeeAddr));
+    logger.debug(`deviceLeft, 0x${nwk.toString(16)}, ${ieeeAddr}`, NS);
+    this.emit("deviceLeft", nwk, ieeeAddr);
   }
 
   public setNode(nwk: number, ieee: BlzEUI64 | number[]): void {
@@ -512,7 +527,7 @@ export class Driver extends EventEmitter {
       ieee = new BlzEUI64(ieee);
     }
 
-    this.eui64ToNodeId.set(ieee.toString(), nwk);
+    this.eui64ToNodeId.set(this.normalizeIeee(ieee.toString()), nwk);
   }
 
   public async request(
@@ -529,14 +544,14 @@ export class Driver extends EventEmitter {
         if (typeof nwk !== "number") {
           const eui64 = nwk as BlzEUI64;
           const strEui64 = eui64.toString();
-          let nodeId = this.eui64ToNodeId.get(strEui64);
+          let nodeId = this.eui64ToNodeId.get(this.normalizeIeee(strEui64));
 
           if (nodeId === undefined) {
             nodeId = (
               await this.blz.execCommand("getNodeIdByEui64", { eui64: eui64 })
             ).nodeId;
             if (nodeId && nodeId !== 0xffff) {
-              this.eui64ToNodeId.set(strEui64, nodeId);
+              this.eui64ToNodeId.set(this.normalizeIeee(strEui64), nodeId);
             } else {
               throw new Error("Unknown EUI64:" + strEui64);
             }
@@ -667,7 +682,7 @@ export class Driver extends EventEmitter {
 
     if (response.status === BlzStatus.SUCCESS) {
       const eui64 = new BlzEUI64(response.eui64);
-      this.eui64ToNodeId.set(eui64.toString(), nwk);
+      this.eui64ToNodeId.set(this.normalizeIeee(eui64.toString()), nwk);
 
       return eui64;
     } else {
