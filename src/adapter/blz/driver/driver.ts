@@ -521,15 +521,13 @@ export class Driver extends EventEmitter {
     data: Buffer,
     extendedTimeout = false,
   ): Promise<boolean> {
-    let result = false;
-
-    for (const delay of REQUEST_ATTEMPT_DELAYS) {
+    for (let attempt = 0; attempt < REQUEST_ATTEMPT_DELAYS.length; attempt++) {
       try {
         const seq = (apsFrame.sequence + 1) & 0xff;
-        let eui64: BlzEUI64;
+        let resolvedNwk: number;
 
         if (typeof nwk !== "number") {
-          eui64 = nwk as BlzEUI64;
+          const eui64 = nwk as BlzEUI64;
           const strEui64 = eui64.toString();
           let nodeId = this.eui64ToNodeId.get(strEui64);
 
@@ -543,12 +541,14 @@ export class Driver extends EventEmitter {
               throw new Error("Unknown EUI64:" + strEui64);
             }
           }
-          nwk = nodeId;
+          resolvedNwk = nodeId;
+        } else {
+          resolvedNwk = nwk;
         }
 
         const sendResult = await this.blz.sendApsData(
           BlzOutgoingMessageType.BLZ_MSG_TYPE_UNICAST, // msgType
-          nwk, // dstShortAddr
+          resolvedNwk, // dstShortAddr
           apsFrame.profileId, // profileId
           apsFrame.clusterId, // clusterId
           apsFrame.sourceEndpoint, // srcEp
@@ -560,15 +560,28 @@ export class Driver extends EventEmitter {
           data, // payload
         );
 
-        result = sendResult == BlzStatus.SUCCESS;
-        break;
+        if (sendResult === BlzStatus.SUCCESS) {
+          return true;
+        }
+
+        logger.debug(
+          `Request attempt ${attempt + 1}/${REQUEST_ATTEMPT_DELAYS.length} failed with status=${sendResult}`,
+          NS,
+        );
       } catch (e) {
-        logger.debug(`Request error ${e}`, NS);
-        break;
+        logger.debug(
+          `Request attempt ${attempt + 1}/${REQUEST_ATTEMPT_DELAYS.length} error: ${e}`,
+          NS,
+        );
+      }
+
+      // Wait before retrying (unless this was the last attempt)
+      if (attempt < REQUEST_ATTEMPT_DELAYS.length - 1) {
+        await wait(REQUEST_ATTEMPT_DELAYS[attempt]);
       }
     }
 
-    return result;
+    return false;
   }
 
   // Modify mrequest to use sendApsData with multicast msgType
