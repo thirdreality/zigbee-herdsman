@@ -99,6 +99,11 @@ export class SerialDriver extends EventEmitter {
       this.initialized = true;
     } catch (error) {
       this.initialized = false;
+      // Clean up pipes and port on failure to prevent orphaned streams
+      this.writer.unpipe(this.serialPort);
+      this.serialPort.unpipe(this.parser);
+      this.serialPort.destroy();
+      this.serialPort = undefined as unknown as SerialPort;
       throw error;
     }
   }
@@ -249,12 +254,17 @@ export class SerialDriver extends EventEmitter {
   public async close(emitClose: boolean): Promise<void> {
     logger.debug("Closing UART", NS);
     this.queue.clear();
+    this.waitress.clear();
+    this.parser.removeAllListeners();
+    this.parser.reset();
 
     if (this.initialized) {
       this.initialized = false;
 
       if (this.serialPort) {
         try {
+          this.writer.unpipe(this.serialPort);
+          this.serialPort.unpipe(this.parser);
           await this.serialPort.asyncFlushAndClose();
         } catch (error) {
           if (emitClose) {
@@ -263,8 +273,10 @@ export class SerialDriver extends EventEmitter {
 
           throw error;
         }
-      } else {
-        this.socketPort!.destroy();
+      } else if (this.socketPort) {
+        this.writer.unpipe(this.socketPort);
+        this.socketPort.unpipe(this.parser);
+        this.socketPort.destroy();
       }
     }
 
@@ -321,6 +333,7 @@ export class SerialDriver extends EventEmitter {
         }
         return;
       } catch (e) {
+        this.waitress.remove(waiter.ID);
         logger.error(`Attempt ${attempt + 1} failed for seq ${seq}: ${e}`, NS);
 
         if (attempt === retries) {
