@@ -10,6 +10,7 @@ import Request from "../src/controller/helpers/request";
 import zclTransactionSequenceNumber from "../src/controller/helpers/zclTransactionSequenceNumber";
 import {Device, Endpoint, Group} from "../src/controller/model";
 import {InterviewState} from "../src/controller/model/device";
+import type {TCustomCluster} from "../src/controller/tstype";
 import type * as Models from "../src/models";
 import * as Utils from "../src/utils";
 import {setLogger} from "../src/utils/logger";
@@ -207,9 +208,11 @@ const mockAdapterSendZdo = vi
 
 let iasZoneReadState170Count = 0;
 let enroll170 = true;
+let enrollRspThrow = false;
 let configureReportStatus = 0;
 let configureReportDefaultRsp = false;
 let lastSentZclFrameToEndpoint: Buffer | undefined;
+let readManufacturerCode: number | undefined;
 
 const restoreMocksendZclFrameToEndpoint = () => {
     mocksendZclFrameToEndpoint.mockImplementation((_ieeeAddr, networkAddress, endpoint, frame: Zcl.Frame) => {
@@ -223,24 +226,31 @@ const restoreMocksendZclFrameToEndpoint = () => {
             const payload: {[key: string]: unknown}[] = [];
             const cluster = frame.cluster;
             for (const item of frame.payload) {
-                if (item.attrId !== 65314) {
-                    const attribute = cluster.getAttribute(item.attrId);
+                if (item.attrId === 65314) {
+                    payload.push({
+                        attrId: item.attrId,
+                        status: Zcl.Status.SUCCESS,
+                        dataType: Zcl.DataType.UINT16,
+                        attrData: 0x4312,
+                    });
+                } else {
+                    const attribute = Zcl.Utils.getClusterAttribute(cluster, item.attrId, readManufacturerCode);
 
                     if (attribute) {
                         if (frame.isCluster("ssIasZone") && item.attrId === 0) {
                             iasZoneReadState170Count++;
                             payload.push({
                                 attrId: item.attrId,
+                                status: Zcl.Status.SUCCESS,
                                 dataType: attribute.type,
                                 attrData: iasZoneReadState170Count === 2 && enroll170 ? 1 : 0,
-                                status: 0,
                             });
                         } else {
                             payload.push({
                                 attrId: item.attrId,
+                                status: Zcl.Status.SUCCESS,
                                 dataType: attribute.type,
                                 attrData: MOCK_DEVICES[networkAddress]!.attributes![endpoint][attribute.name],
-                                status: 0,
                             });
                         }
                     }
@@ -260,10 +270,14 @@ const restoreMocksendZclFrameToEndpoint = () => {
                 10,
                 `${frame.command.name}Rsp`,
                 frame.cluster.ID,
-                {status: 0, groupid: 1},
+                {status: Zcl.Status.SUCCESS, groupid: 1},
                 {},
             );
             return {clusterID: frame.cluster.ID, header: responseFrame.header, data: responseFrame.toBuffer()};
+        }
+
+        if (frame.header.isSpecific && frame.command.name === "enrollRsp" && frame.cluster.name === "ssIasZone" && enrollRspThrow) {
+            throw new Error("ias-zone-failure");
         }
 
         if (
@@ -301,7 +315,7 @@ const restoreMocksendZclFrameToEndpoint = () => {
         if (frame.header.isGlobal && frame.isCommand("write")) {
             const payload: {[key: string]: unknown}[] = [];
             for (const item of frame.payload) {
-                payload.push({attrId: item.attrId, status: 0});
+                payload.push({attrId: item.attrId, status: Zcl.Status.SUCCESS});
             }
 
             const responseFrame = Zcl.Frame.create(0, 1, true, undefined, 10, "writeRsp", 0, payload, {});
@@ -460,6 +474,35 @@ const options = {
 
 const databaseContents = () => fs.readFileSync(options.databasePath).toString();
 
+const CUSTOM_CLUSTERS = {
+    hvacThermostat: {
+        name: "hvacThermostat",
+        ID: 0x0201,
+        attributes: {
+            viessmannWindowOpenInternal: {
+                name: "viessmannWindowOpenInternal",
+                ID: 0x4000,
+                type: Zcl.DataType.ENUM8,
+                manufacturerCode: Zcl.ManufacturerCode.VIESSMANN_ELEKTRONIK_GMBH,
+                write: true,
+                max: 0xff,
+            },
+        },
+        commands: {},
+        commandsResponse: {},
+    },
+} satisfies CustomClusters;
+
+interface CustomClustersTypes extends Record<string, TCustomCluster> {
+    hvacThermostat: {
+        attributes: {
+            viessmannWindowOpenInternal: number;
+        };
+        commands: never;
+        commandResponses: never;
+    };
+}
+
 describe("Controller", () => {
     let controller: Controller;
     let mockedDate: Date;
@@ -480,6 +523,7 @@ describe("Controller", () => {
 
     beforeEach(() => {
         vi.setSystemTime(mockedDate);
+        readManufacturerCode = undefined;
         sendZdoResponseStatus = Zdo.Status.SUCCESS;
         for (const m of mocksRestore) m.mockRestore();
         for (const m of mocksClear) m.mockClear();
@@ -490,6 +534,7 @@ describe("Controller", () => {
         configureReportStatus = 0;
         configureReportDefaultRsp = false;
         enroll170 = true;
+        enrollRspThrow = false;
         options.network.channelList = [15];
 
         for (const event in events) {
@@ -2297,8 +2342,7 @@ describe("Controller", () => {
 
     it("Device joins and interview iAs enrollment succeeds", async () => {
         await controller.start();
-        const event = mockAdapterEvents.deviceJoined({networkAddress: 170, ieeeAddr: "0x170"});
-        await event;
+        await mockAdapterEvents.deviceJoined({networkAddress: 170, ieeeAddr: "0x170"});
         expect(events.deviceInterview.length).toBe(2);
         expect(events.deviceInterview[0].status).toBe("started");
         // @ts-expect-error private but deep cloned
@@ -2325,7 +2369,6 @@ describe("Controller", () => {
             command: {
                 ID: 2,
                 name: "write",
-                parameters: expect.any(Array),
                 response: 4,
             },
         });
@@ -2359,6 +2402,20 @@ describe("Controller", () => {
         enroll170 = false;
         await controller.start();
         await mockAdapterEvents.deviceJoined({networkAddress: 170, ieeeAddr: "0x170"});
+        expect(events.deviceInterview.length).toBe(2);
+        expect(events.deviceInterview[0].status).toBe("started");
+        // @ts-expect-error private but deep cloned
+        expect(events.deviceInterview[0].device._ieeeAddr).toBe("0x170");
+        expect(events.deviceInterview[1].status).toBe("failed");
+        // @ts-expect-error private but deep cloned
+        expect(events.deviceInterview[1].device._ieeeAddr).toBe("0x170");
+    });
+
+    it("Device joins and interview iAs enrollment throws", async () => {
+        await controller.start();
+        enrollRspThrow = true;
+        await mockAdapterEvents.deviceJoined({networkAddress: 170, ieeeAddr: "0x170"});
+
         expect(events.deviceInterview.length).toBe(2);
         expect(events.deviceInterview[0].status).toBe("started");
         // @ts-expect-error private but deep cloned
@@ -2532,9 +2589,9 @@ describe("Controller", () => {
         const endpointReadSpy = vi.spyOn(endpoint, "read");
         const endpointDefaultResponseSpy = vi.spyOn(endpoint, "defaultResponse");
 
-        deviceOnZclDataSpy.mockImplementationOnce(async (a, b, c) => {
+        deviceOnZclDataSpy.mockImplementationOnce(async (a, b, c, d) => {
             await mockAdapterEvents.deviceLeave({networkAddress: 129, ieeeAddr: undefined});
-            await device.onZclData(a, b, c);
+            await device.onZclData(a, b, c, d);
         });
 
         await mockAdapterEvents.zclPayload({
@@ -2600,8 +2657,17 @@ describe("Controller", () => {
     });
 
     it("Receive cluster command", async () => {
-        const buffer = Buffer.from([0x05, 0x7c, 0x11, 0x1d, 0x07, 0x00, 0x01, 0x0d, 0x00]);
-        const frame = Zcl.Frame.fromBuffer(5, Zcl.Header.fromBuffer(buffer), buffer, {});
+        const frame = Zcl.Frame.create(
+            Zcl.FrameType.SPECIFIC,
+            Zcl.Direction.SERVER_TO_CLIENT,
+            false,
+            undefined,
+            29,
+            "addRsp",
+            "genScenes",
+            {status: 0, groupId: 10, sceneId: 2},
+            {},
+        );
         await controller.start();
         await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
         await mockAdapterEvents.zclPayload({
@@ -2618,24 +2684,25 @@ describe("Controller", () => {
         expect(events.message.length).toBe(1);
         const expected = {
             cluster: "genScenes",
-            type: "commandTradfriArrowSingle",
+            type: "commandAddRsp",
             device: expect.any(Device),
             endpoint: expect.any(Endpoint),
             data: {
-                value: 256,
-                value2: 13,
+                groupId: 10,
+                sceneId: 2,
+                status: 0,
             },
             linkquality: 19,
             groupID: 10,
             meta: {
                 zclTransactionSequenceNumber: 29,
-                manufacturerCode: 4476,
+                manufacturerCode: undefined,
                 frameControl: {
                     reservedBits: 0,
-                    direction: 0,
+                    direction: 1,
                     disableDefaultResponse: false,
                     frameType: 1,
-                    manufacturerSpecific: true,
+                    manufacturerSpecific: false,
                 },
                 rawData: expect.any(Buffer),
             },
@@ -2680,21 +2747,14 @@ describe("Controller", () => {
 
     it("Receive zclData send default response", async () => {
         const frame = Zcl.Frame.create(
-            1,
-            1,
+            Zcl.FrameType.SPECIFIC,
+            Zcl.Direction.SERVER_TO_CLIENT,
             false,
-            4476,
+            Zcl.ManufacturerCode.IKEA_OF_SWEDEN,
             29,
-            1,
-            5,
-            {
-                groupid: 1,
-                sceneid: 1,
-                status: 0,
-                transtime: 0,
-                scenename: "",
-                extensionfieldsets: [],
-            },
+            "viewRsp",
+            "genScenes",
+            {groupid: 1, sceneid: 1, status: 0, transtime: 0, scenename: "", extensionfieldsets: []},
             {},
         );
         await controller.start();
@@ -3330,12 +3390,13 @@ describe("Controller", () => {
         await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
         const device = controller.getDeviceByIeeeAddr("0x129")!;
         device.addCustomCluster("genBasic", {
+            name: "genBasic",
             ID: 0,
             commands: {},
             commandsResponse: {},
             attributes: {
-                customAttr: {ID: 256, type: Zcl.DataType.UINT8},
-                aDifferentZclVersion: {ID: 0, type: Zcl.DataType.UINT8},
+                customAttr: {name: "customAttr", ID: 256, type: Zcl.DataType.UINT8},
+                aDifferentZclVersion: {name: "aDifferentZclVersion", ID: 0, type: Zcl.DataType.UINT8},
             },
         });
         const buffer = Buffer.from([24, 169, 10, 0, 1, 24, 3, 0, 0, 24, 1, 2, 0, 24, 1]);
@@ -3348,11 +3409,12 @@ describe("Controller", () => {
 
         // Should allow to extend an already extended cluster again.
         device.addCustomCluster("genBasic", {
+            name: "genBasic",
             ID: 0,
             commands: {},
             commandsResponse: {},
             attributes: {
-                customAttrSecondOverride: {ID: 256, type: Zcl.DataType.UINT8},
+                customAttrSecondOverride: {name: "customAttrSecondOverride", ID: 256, type: Zcl.DataType.UINT8},
             },
         });
         await mockAdapterEvents.zclPayload(payload);
@@ -3366,10 +3428,11 @@ describe("Controller", () => {
         await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
         const device = controller.getDeviceByIeeeAddr("0x129")!;
         device.addCustomCluster("myCustomCluster", {
+            name: "myCustomCluster",
             ID: 9123,
             commands: {},
             commandsResponse: {},
-            attributes: {superAttribute: {ID: 0, type: Zcl.DataType.UINT8}},
+            attributes: {superAttribute: {name: "superAttribute", ID: 0, type: Zcl.DataType.UINT8}},
         });
         const buffer = Buffer.from([24, 169, 10, 0, 1, 24, 3, 0, 0, 24, 1]);
         const header = Zcl.Header.fromBuffer(buffer);
@@ -3393,10 +3456,11 @@ describe("Controller", () => {
         await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
         const device = controller.getDeviceByIeeeAddr("0x129")!;
         device.addCustomCluster("myCustomCluster", {
+            name: "myCustomCluster",
             ID: Zcl.Clusters.genBasic.ID,
             commands: {},
             commandsResponse: {},
-            attributes: {customAttr: {ID: 256, type: Zcl.DataType.UINT8}},
+            attributes: {customAttr: {name: "customAttr", ID: 256, type: Zcl.DataType.UINT8}},
         });
         const buffer = Buffer.from([24, 169, 10, 0, 1, 24, 3, 0, 0, 24, 1]);
         const header = Zcl.Header.fromBuffer(buffer);
@@ -3462,17 +3526,28 @@ describe("Controller", () => {
         }
 
         device.addCustomCluster("hvacThermostat", {
+            name: "hvacThermostat",
             ID: 0x0201,
             attributes: {
-                localTemperatureCalibration: {ID: 0x0010, type: Zcl.DataType.INT8, write: true, min: -50, max: 50, default: 0},
+                localTemperatureCalibration: {
+                    name: "localTemperatureCalibration",
+                    ID: 0x0010,
+                    type: Zcl.DataType.INT8,
+                    write: true,
+                    min: -50,
+                    max: 50,
+                    default: 0,
+                },
             },
             commands: {},
             commandsResponse: {},
         });
         device.addCustomCluster("hvacThermostat", {
+            name: "hvacThermostat",
             ID: Zcl.Clusters.hvacThermostat.ID,
             attributes: {
                 operatingMode: {
+                    name: "operatingMode",
                     ID: 0x4007,
                     type: Zcl.DataType.ENUM8,
                     manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
@@ -3480,6 +3555,7 @@ describe("Controller", () => {
                     max: 0xff,
                 },
                 heatingDemand: {
+                    name: "heatingDemand",
                     ID: 0x4020,
                     type: Zcl.DataType.ENUM8,
                     manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
@@ -3487,6 +3563,7 @@ describe("Controller", () => {
                     max: 0xff,
                 },
                 valveAdaptStatus: {
+                    name: "valveAdaptStatus",
                     ID: 0x4022,
                     type: Zcl.DataType.ENUM8,
                     manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
@@ -3494,6 +3571,7 @@ describe("Controller", () => {
                     max: 0xff,
                 },
                 unknownAttribute0: {
+                    name: "unknownAttribute0",
                     ID: 0x4025,
                     type: Zcl.DataType.ENUM8,
                     manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
@@ -3501,6 +3579,7 @@ describe("Controller", () => {
                     max: 0xff,
                 },
                 remoteTemperature: {
+                    name: "remoteTemperature",
                     ID: 0x4040,
                     type: Zcl.DataType.INT16,
                     manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
@@ -3508,6 +3587,7 @@ describe("Controller", () => {
                     min: -32768,
                 },
                 unknownAttribute1: {
+                    name: "unknownAttribute1",
                     ID: 0x4041,
                     type: Zcl.DataType.ENUM8,
                     manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
@@ -3515,6 +3595,7 @@ describe("Controller", () => {
                     max: 0xff,
                 },
                 windowOpenMode: {
+                    name: "windowOpenMode",
                     ID: 0x4042,
                     type: Zcl.DataType.ENUM8,
                     manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
@@ -3522,6 +3603,7 @@ describe("Controller", () => {
                     max: 0xff,
                 },
                 boostHeating: {
+                    name: "boostHeating",
                     ID: 0x4043,
                     type: Zcl.DataType.ENUM8,
                     manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
@@ -3529,14 +3611,23 @@ describe("Controller", () => {
                     max: 0xff,
                 },
                 cableSensorTemperature: {
+                    name: "cableSensorTemperature",
                     ID: 0x4052,
                     type: Zcl.DataType.INT16,
                     manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
                     write: true,
                     min: -32768,
                 },
-                valveType: {ID: 0x4060, type: Zcl.DataType.ENUM8, manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH, write: true, max: 0xff},
+                valveType: {
+                    name: "valveType",
+                    ID: 0x4060,
+                    type: Zcl.DataType.ENUM8,
+                    manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
+                    write: true,
+                    max: 0xff,
+                },
                 unknownAttribute2: {
+                    name: "unknownAttribute2",
                     ID: 0x4061,
                     type: Zcl.DataType.ENUM8,
                     manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
@@ -3544,15 +3635,30 @@ describe("Controller", () => {
                     max: 0xff,
                 },
                 cableSensorMode: {
+                    name: "cableSensorMode",
                     ID: 0x4062,
                     type: Zcl.DataType.ENUM8,
                     manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
                     write: true,
                     max: 0xff,
                 },
-                heaterType: {ID: 0x4063, type: Zcl.DataType.ENUM8, manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH, write: true, max: 0xff},
-                errorState: {ID: 0x5000, type: Zcl.DataType.BITMAP8, manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH, write: true},
+                heaterType: {
+                    name: "heaterType",
+                    ID: 0x4063,
+                    type: Zcl.DataType.ENUM8,
+                    manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
+                    write: true,
+                    max: 0xff,
+                },
+                errorState: {
+                    name: "errorState",
+                    ID: 0x5000,
+                    type: Zcl.DataType.BITMAP8,
+                    manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
+                    write: true,
+                },
                 automaticValveAdapt: {
+                    name: "automaticValveAdapt",
                     ID: 0x5010,
                     type: Zcl.DataType.ENUM8,
                     manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
@@ -3561,7 +3667,7 @@ describe("Controller", () => {
                 },
             },
             commands: {
-                calibrateValve: {ID: 0x41, parameters: []},
+                calibrateValve: {name: "calibrateValve", ID: 0x41, parameters: []},
             },
             commandsResponse: {},
         });
@@ -3590,11 +3696,13 @@ describe("Controller", () => {
             ),
         ).rejects.toThrow("localTemperatureCalibration requires max of 50");
 
+        readManufacturerCode = Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH;
         await expect(
             endpoint.read<"hvacThermostat", BoschThermostatCluster>("hvacThermostat", ["boostHeating", "operatingMode"], {
                 manufacturerCode: Zcl.ManufacturerCode.ROBERT_BOSCH_GMBH,
             }),
         ).resolves.toStrictEqual({16391: 0, 16451: 0});
+        readManufacturerCode = undefined;
     });
 
     it("Send zcl command to all no options", async () => {
@@ -3625,8 +3733,11 @@ describe("Controller", () => {
         await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
         const device = controller.getDeviceByIeeeAddr("0x129")!;
         device.addCustomCluster("ssIasZone", {
+            name: "ssIasZone",
             ID: Zcl.Clusters.ssIasZone.ID,
-            commands: {boschSmokeAlarmSiren: {ID: 0x80, parameters: [{name: "data", type: Zcl.DataType.UINT16, max: 0xffff}]}},
+            commands: {
+                boschSmokeAlarmSiren: {name: "boschSmokeAlarmSiren", ID: 0x80, parameters: [{name: "data", type: Zcl.DataType.UINT16, max: 0xffff}]},
+            },
             commandsResponse: {},
             attributes: {},
         });
@@ -4032,13 +4143,16 @@ describe("Controller", () => {
         expect(device.checkinInterval).toBeUndefined();
         expect(device.pendingRequestTimeout).toStrictEqual(0);
         mocksendZclFrameToEndpoint.mockClear();
-        mocksendZclFrameToEndpoint.mockReturnValueOnce(null);
+        mocksendZclFrameToEndpoint.mockReturnValueOnce(undefined);
         mocksendZclFrameToEndpoint.mockImplementationOnce((_ieeeAddr, _networkAddress, _endpoint, frame: Zcl.Frame) => {
             const payload = [{attrId: 0, status: 0, dataType: 35, attrData: 204}];
             const responseFrame = Zcl.Frame.create(0, 1, true, undefined, 10, "readRsp", frame.cluster.ID, payload, {});
             return {header: responseFrame.header, data: responseFrame.toBuffer(), clusterID: frame.cluster.ID};
         });
-        mocksendZclFrameToEndpoint.mockImplementationOnce(() => vi.advanceTimersByTime(10));
+        mocksendZclFrameToEndpoint.mockImplementationOnce(() => {
+            vi.advanceTimersByTime(10);
+            return undefined;
+        });
         let frame = Zcl.Frame.create(
             Zcl.FrameType.SPECIFIC,
             Zcl.Direction.SERVER_TO_CLIENT,
@@ -4437,11 +4551,11 @@ describe("Controller", () => {
         mocksendZclFrameToEndpoint.mockClear();
 
         // @ts-expect-error private
-        endpoint._configuredReportings = [{cluster: 65281, attrId: 269, minRepIntval: 60, maxRepIntval: 900, repChange: 1}];
+        endpoint._configuredReportings = [{cluster: 0xfc57, attrId: 0x0005, minRepIntval: 60, maxRepIntval: 900, repChange: 1}];
 
-        await endpoint.configureReporting("manuSpecificSinope", [
+        await endpoint.configureReporting("manuSpecificAmazonWWAH", [
             {
-                attribute: "roomTemperature",
+                attribute: "macRetryCount",
                 minimumReportInterval: 1,
                 maximumReportInterval: 10,
                 reportableChange: 1,
@@ -4449,8 +4563,8 @@ describe("Controller", () => {
         ]);
 
         expect(endpoint.configuredReportings.length).toBe(1);
-        expect(endpoint.configuredReportings[0].attribute.name).toBe("roomTemperature");
-        expect(endpoint.configuredReportings[0].cluster.name).toBe("manuSpecificSinope");
+        expect(endpoint.configuredReportings[0].attribute.name).toBe("macRetryCount");
+        expect(endpoint.configuredReportings[0].cluster.name).toBe("manuSpecificAmazonWWAH");
     });
 
     it("Endpoint configure reporting for manufacturer specific attribute", async () => {
@@ -4459,9 +4573,10 @@ describe("Controller", () => {
         const device = controller.getDeviceByIeeeAddr("0x129")!;
         // @ts-expect-error private
         device._manufacturerID = 4641;
+        device.addCustomCluster("hvacThermostat", CUSTOM_CLUSTERS.hvacThermostat);
         const endpoint = device.getEndpoint(1)!;
         mocksendZclFrameToEndpoint.mockClear();
-        await endpoint.configureReporting(
+        await endpoint.configureReporting<"hvacThermostat", CustomClustersTypes["hvacThermostat"]>(
             "hvacThermostat",
             [
                 {
@@ -4478,7 +4593,7 @@ describe("Controller", () => {
         expect(call[0]).toBe("0x129");
         expect(call[1]).toBe(129);
         expect(call[2]).toBe(1);
-        expect(deepClone(call[3])).toStrictEqual(
+        expect(deepClone(call[3])).toMatchObject(
             deepClone(
                 Zcl.Frame.create(
                     Zcl.FrameType.GLOBAL,
@@ -4489,12 +4604,13 @@ describe("Controller", () => {
                     "configReport",
                     513,
                     [{attrId: 16384, dataType: 48, direction: 0, maxRepIntval: 10, minRepIntval: 1, repChange: 1}],
-                    {},
+                    CUSTOM_CLUSTERS,
                 ),
             ),
         );
 
         expect(endpoint.configuredReportings.length).toBe(1);
+
         expect({...endpoint.configuredReportings[0], cluster: undefined}).toStrictEqual({
             attribute: expect.objectContaining({ID: 16384, type: 48, manufacturerCode: 4641, name: "viessmannWindowOpenInternal"}),
             minimumReportInterval: 1,
@@ -4510,9 +4626,10 @@ describe("Controller", () => {
         const device = controller.getDeviceByIeeeAddr("0x129")!;
         // @ts-expect-error private
         device._manufacturerID = Zcl.ManufacturerCode.VIESSMANN_ELEKTRONIK_GMBH;
+        device.addCustomCluster("hvacThermostat", CUSTOM_CLUSTERS.hvacThermostat);
         const endpoint = device.getEndpoint(1)!;
         mocksendZclFrameToEndpoint.mockClear();
-        await endpoint.configureReporting("hvacThermostat", [
+        await endpoint.configureReporting<"hvacThermostat", CustomClustersTypes["hvacThermostat"]>("hvacThermostat", [
             {
                 attribute: "viessmannWindowOpenInternal",
                 minimumReportInterval: 1,
@@ -4525,7 +4642,7 @@ describe("Controller", () => {
         expect(call[0]).toBe("0x129");
         expect(call[1]).toBe(129);
         expect(call[2]).toBe(1);
-        expect(deepClone(call[3])).toStrictEqual(
+        expect(deepClone(call[3])).toMatchObject(
             deepClone(
                 Zcl.Frame.create(
                     Zcl.FrameType.GLOBAL,
@@ -4565,7 +4682,7 @@ describe("Controller", () => {
         expect(deepClone(endpoint.configuredReportings)).toStrictEqual([
             {
                 cluster: deepClone(genPowerCfg),
-                attribute: genPowerCfg.getAttribute("mainsFrequency"),
+                attribute: Zcl.Utils.getClusterAttribute(genPowerCfg, "mainsFrequency", undefined),
                 minimumReportInterval: 1,
                 maximumReportInterval: 10,
                 reportableChange: 1,
@@ -4578,7 +4695,7 @@ describe("Controller", () => {
         expect(deepClone(endpoint.configuredReportings)).toStrictEqual([
             {
                 cluster: deepClone(genPowerCfg),
-                attribute: genPowerCfg.getAttribute("mainsFrequency"),
+                attribute: Zcl.Utils.getClusterAttribute(genPowerCfg, "mainsFrequency", undefined),
                 minimumReportInterval: 3,
                 maximumReportInterval: 100,
                 reportableChange: 2,
@@ -4591,14 +4708,14 @@ describe("Controller", () => {
         expect(deepClone(endpoint.configuredReportings)).toStrictEqual([
             {
                 cluster: deepClone(genPowerCfg),
-                attribute: genPowerCfg.getAttribute("mainsFrequency"),
+                attribute: Zcl.Utils.getClusterAttribute(genPowerCfg, "mainsFrequency", undefined),
                 minimumReportInterval: 3,
                 maximumReportInterval: 100,
                 reportableChange: 2,
             },
             {
                 cluster: deepClone(msOccupancySensing),
-                attribute: msOccupancySensing.getAttribute("occupancy"),
+                attribute: Zcl.Utils.getClusterAttribute(msOccupancySensing, "occupancy", undefined),
                 minimumReportInterval: 3,
                 maximumReportInterval: 100,
                 reportableChange: 2,
@@ -4611,7 +4728,7 @@ describe("Controller", () => {
         expect(deepClone(endpoint.configuredReportings)).toStrictEqual([
             {
                 cluster: deepClone(genPowerCfg),
-                attribute: genPowerCfg.getAttribute("mainsFrequency"),
+                attribute: Zcl.Utils.getClusterAttribute(genPowerCfg, "mainsFrequency", undefined),
                 minimumReportInterval: 3,
                 maximumReportInterval: 100,
                 reportableChange: 2,
@@ -4927,14 +5044,37 @@ describe("Controller", () => {
         await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
         const device = controller.getDeviceByIeeeAddr("0x129")!;
         const endpoint = device.getEndpoint(1)!;
-        const genBasic = Zcl.Utils.getCluster("genBasic", undefined, {});
         const saveClusterAttributeReportConfigSpy = vi.spyOn(endpoint, "saveClusterAttributeReportConfig");
 
-        endpoint.saveClusterAttributeReportConfig(genBasic.ID, Zcl.ManufacturerCode.SCHNEIDER_ELECTRIC, [
+        interface SchneiderGenBasic {
+            attributes: {schneiderMeterRadioPower: number};
+            commands: Record<string, never>;
+            commandResponses: Record<string, never>;
+        }
+
+        device.addCustomCluster("genBasic", {
+            name: "genBasic",
+            ID: 0x0000,
+            attributes: {
+                schneiderMeterRadioPower: {
+                    name: "schneiderMeterRadioPower",
+                    ID: 0xe200,
+                    type: Zcl.DataType.INT8,
+                    manufacturerCode: Zcl.ManufacturerCode.SCHNEIDER_ELECTRIC,
+                    write: true,
+                    min: -128,
+                    max: 127,
+                },
+            },
+            commands: {},
+            commandsResponse: {},
+        });
+
+        endpoint.saveClusterAttributeReportConfig(Zcl.Clusters.genBasic.ID, Zcl.ManufacturerCode.SCHNEIDER_ELECTRIC, [
             {
                 status: Zcl.Status.SUCCESS,
                 direction: Zcl.Direction.CLIENT_TO_SERVER,
-                attrId: genBasic.attributes.schneiderMeterRadioPower.ID,
+                attrId: 0xe200,
                 dataType: Zcl.DataType.INT8,
                 minRepIntval: 80,
                 maxRepIntval: 300,
@@ -4949,7 +5089,7 @@ describe("Controller", () => {
                 {
                     status: Zcl.Status.SUCCESS,
                     direction: Zcl.Direction.CLIENT_TO_SERVER,
-                    attrId: genBasic.attributes.schneiderMeterRadioPower.ID,
+                    attrId: 0xe200,
                     dataType: Zcl.DataType.INT8,
                     minRepIntval: 15,
                     maxRepIntval: 213,
@@ -4972,9 +5112,16 @@ describe("Controller", () => {
 
         expect(deepClone(endpoint.configuredReportings)).toStrictEqual([
             {
-                cluster: deepClone(genBasic),
+                cluster: expect.objectContaining({
+                    ID: 0x0000,
+                    name: "genBasic",
+                    attributes: expect.objectContaining({
+                        zclVersion: expect.objectContaining({ID: 0x0000}),
+                        schneiderMeterRadioPower: expect.objectContaining({ID: 0xe200}),
+                    }),
+                }),
                 attribute: expect.objectContaining({
-                    ID: genBasic.attributes.schneiderMeterRadioPower.ID,
+                    ID: 0xe200,
                     name: "schneiderMeterRadioPower",
                     type: Zcl.DataType.INT8,
                     manufacturerCode: Zcl.ManufacturerCode.SCHNEIDER_ELECTRIC,
@@ -4985,7 +5132,7 @@ describe("Controller", () => {
             },
         ]);
 
-        await endpoint.readReportingConfig("genBasic", [{attribute: "schneiderMeterRadioPower"}], {
+        await endpoint.readReportingConfig<"genBasic", SchneiderGenBasic>("genBasic", [{attribute: "schneiderMeterRadioPower"}], {
             manufacturerCode: Zcl.ManufacturerCode.SCHNEIDER_ELECTRIC,
         });
 
@@ -5002,9 +5149,9 @@ describe("Controller", () => {
                     Zcl.ManufacturerCode.SCHNEIDER_ELECTRIC,
                     9,
                     "readReportConfig",
-                    genBasic.ID,
-                    [{direction: Zcl.Direction.CLIENT_TO_SERVER, attrId: genBasic.attributes.schneiderMeterRadioPower.ID}],
-                    {},
+                    Zcl.Clusters.genBasic.ID,
+                    [{direction: Zcl.Direction.CLIENT_TO_SERVER, attrId: 0xe200}],
+                    device.customClusters,
                 ),
             ),
         );
@@ -5012,9 +5159,16 @@ describe("Controller", () => {
 
         expect(deepClone(endpoint.configuredReportings)).toStrictEqual([
             {
-                cluster: deepClone(genBasic),
+                cluster: expect.objectContaining({
+                    ID: 0x0000,
+                    name: "genBasic",
+                    attributes: expect.objectContaining({
+                        zclVersion: expect.objectContaining({ID: 0x0000}),
+                        schneiderMeterRadioPower: expect.objectContaining({ID: 0xe200}),
+                    }),
+                }),
                 attribute: expect.objectContaining({
-                    ID: genBasic.attributes.schneiderMeterRadioPower.ID,
+                    ID: 0xe200,
                     name: "schneiderMeterRadioPower",
                     type: Zcl.DataType.INT8,
                     manufacturerCode: Zcl.ManufacturerCode.SCHNEIDER_ELECTRIC,
@@ -5203,10 +5357,11 @@ describe("Controller", () => {
         const endpoint = device.getEndpoint(1)!;
         mocksendZclFrameToEndpoint.mockClear();
         device.addCustomCluster("manuSpecificAssaDoorLock", {
+            name: "manuSpecificAssaDoorLock",
             ID: 0xfc00,
             attributes: {},
             commands: {
-                getBatteryLevel: {ID: 0x12, parameters: []},
+                getBatteryLevel: {name: "getBatteryLevel", ID: 0x12, parameters: []},
             },
             commandsResponse: {},
         });
@@ -5468,14 +5623,15 @@ describe("Controller", () => {
         const device = controller.getDeviceByIeeeAddr("0x129")!;
         // @ts-expect-error private
         device._manufacturerID = Zcl.ManufacturerCode.VIESSMANN_ELEKTRONIK_GMBH;
+        device.addCustomCluster("hvacThermostat", CUSTOM_CLUSTERS.hvacThermostat);
         const endpoint = device.getEndpoint(1)!;
-        await endpoint.write("hvacThermostat", {viessmannWindowOpenInternal: 1});
+        await endpoint.write<"hvacThermostat", CustomClustersTypes["hvacThermostat"]>("hvacThermostat", {viessmannWindowOpenInternal: 1});
         expect(mocksendZclFrameToEndpoint).toHaveBeenCalledTimes(1);
         const call = mocksendZclFrameToEndpoint.mock.calls[0];
         expect(call[0]).toBe("0x129");
         expect(call[1]).toBe(129);
         expect(call[2]).toBe(1);
-        expect(deepClone(call[3])).toStrictEqual(
+        expect(deepClone(call[3])).toMatchObject(
             deepClone(
                 Zcl.Frame.create(
                     Zcl.FrameType.GLOBAL,
@@ -5486,7 +5642,7 @@ describe("Controller", () => {
                     "write",
                     513,
                     [{attrId: 16384, attrData: 1, dataType: 48}],
-                    {},
+                    CUSTOM_CLUSTERS,
                 ),
             ),
         );
@@ -5746,17 +5902,29 @@ describe("Controller", () => {
         await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
         mocksendZclFrameToEndpoint.mockClear();
         const device = controller.getDeviceByIeeeAddr("0x129")!;
-        // @ts-expect-error private
-        device._manufacturerID = Zcl.ManufacturerCode.VIESSMANN_ELEKTRONIK_GMBH;
+        readManufacturerCode = Zcl.ManufacturerCode.VIESSMANN_ELEKTRONIK_GMBH;
+        device.addCustomCluster("hvacThermostat", CUSTOM_CLUSTERS.hvacThermostat);
         const endpoint = device.getEndpoint(1)!;
-        await endpoint.read("hvacThermostat", ["viessmannWindowOpenInternal"]);
+        await endpoint.read<"hvacThermostat", CustomClustersTypes["hvacThermostat"]>("hvacThermostat", ["viessmannWindowOpenInternal"]);
         expect(mocksendZclFrameToEndpoint).toHaveBeenCalledTimes(1);
         const call = mocksendZclFrameToEndpoint.mock.calls[0];
         expect(call[0]).toBe("0x129");
         expect(call[1]).toBe(129);
         expect(call[2]).toBe(1);
-        expect(deepClone(call[3])).toStrictEqual(
-            deepClone(Zcl.Frame.create(Zcl.FrameType.GLOBAL, Zcl.Direction.CLIENT_TO_SERVER, true, 4641, 9, "read", 513, [{attrId: 16384}], {})),
+        expect(deepClone(call[3])).toMatchObject(
+            deepClone(
+                Zcl.Frame.create(
+                    Zcl.FrameType.GLOBAL,
+                    Zcl.Direction.CLIENT_TO_SERVER,
+                    true,
+                    4641,
+                    9,
+                    "read",
+                    513,
+                    [{attrId: 16384}],
+                    CUSTOM_CLUSTERS,
+                ),
+            ),
         );
         expect(call[4]).toBe(10000);
     });
@@ -7323,10 +7491,11 @@ describe("Controller", () => {
         await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
         const device = controller.getDeviceByIeeeAddr("0x129")!;
         device.addCustomCluster("myCustomCluster", {
+            name: "myCustomCluster",
             ID: 9123,
             commands: {},
             commandsResponse: {},
-            attributes: {superAttribute: {ID: 0, type: Zcl.DataType.UINT8}},
+            attributes: {superAttribute: {name: "superAttribute", ID: 0, type: Zcl.DataType.UINT8}},
         });
         const buffer = Buffer.from([24, 169, 99, 0, 1, 24, 3, 0, 0, 24, 1]);
         const header = Zcl.Header.fromBuffer(buffer);
@@ -8346,13 +8515,6 @@ describe("Controller", () => {
         mocksendZclFrameToEndpoint.mockClear();
         mocksendZclFrameToEndpoint.mockReturnValueOnce(null);
 
-        // onZclData is called via mockAdapterEvents, but we need to wait until it has finished
-        const origOnZclData = device.onZclData;
-        device.onZclData = (a, b, c) => {
-            const f = origOnZclData.call(device, a, b, c);
-            vi.advanceTimersByTime(10);
-            return f;
-        };
         const nextTick = new Promise(process.nextTick);
 
         const result = endpoint.write("genOnOff", {onTime: 1}, {disableResponse: true, sendPolicy: "bulk"});
@@ -8479,111 +8641,218 @@ describe("Controller", () => {
         expect(result.missingRouters[0].ieeeAddr).toBe("0x129");
     });
 
-    // ZCLFrame with manufacturer specific flag and manufacturer code defined, to generic device
-    // ZCLFrameConverter should not modify specific frames!
-    it("Should resolve manufacturer specific cluster attribute names on specific ZCL frames: generic target device", async () => {
-        const buffer = Buffer.from([28, 33, 16, 13, 1, 2, 240, 0, 48, 4]);
-        await controller.start();
-        await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
+    describe("ZCL frame converter attributeKeyValue", () => {
+        // ZCLFrame with manufacturer specific flag and manufacturer code defined, to generic device
+        // ZCLFrameConverter should not modify specific frames!
+        it("Should resolve manufacturer specific cluster attribute names on specific ZCL frames: generic target device", async () => {
+            const buffer = Buffer.from([28, 33, 16, 13, 1, 2, 240, 0, 48, 4]);
+            await controller.start();
+            await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
 
-        const frame = Zcl.Frame.fromBuffer(
-            Zcl.Utils.getCluster("closuresWindowCovering", undefined, {}).ID,
-            Zcl.Header.fromBuffer(buffer),
-            buffer,
-            {},
-        );
-        await mockAdapterEvents.zclPayload({
-            wasBroadcast: false,
-            address: "0x129",
-            clusterID: frame.cluster.ID,
-            data: frame.toBuffer(),
-            header: frame.header,
-            endpoint: 1,
-            linkquality: 50,
-            groupID: 0,
+            const frame = Zcl.Frame.fromBuffer(
+                Zcl.Utils.getCluster("closuresWindowCovering", undefined, {}).ID,
+                Zcl.Header.fromBuffer(buffer),
+                buffer,
+                {},
+            );
+            await mockAdapterEvents.zclPayload({
+                wasBroadcast: false,
+                address: "0x129",
+                clusterID: frame.cluster.ID,
+                data: frame.toBuffer(),
+                header: frame.header,
+                endpoint: 1,
+                linkquality: 50,
+                groupID: 0,
+            });
+            expect(events.message.length).toBe(1);
+            expect(events.message[0].data).toMatchObject({calibrationMode: 4});
+            expect(events.message[0].data).not.toMatchObject({tuyaMotorReversal: 4});
         });
-        expect(events.message.length).toBe(1);
-        expect(events.message[0].data).toMatchObject({calibrationMode: 4});
-        expect(events.message[0].data).not.toMatchObject({tuyaMotorReversal: 4});
+
+        // ZCLFrame with manufacturer specific flag and manufacturer code defined, to specific device
+        // ZCLFrameConverter should not modify specific frames!
+        it("Should resolve manufacturer specific cluster attribute names on specific ZCL frames: specific target device", async () => {
+            const buffer = Buffer.from([28, 33, 16, 13, 1, 2, 240, 0, 48, 4]);
+            await controller.start();
+            await mockAdapterEvents.deviceJoined({networkAddress: 177, ieeeAddr: "0x177"});
+            const frame = Zcl.Frame.fromBuffer(
+                Zcl.Utils.getCluster("closuresWindowCovering", undefined, {}).ID,
+                Zcl.Header.fromBuffer(buffer),
+                buffer,
+                {},
+            );
+            await mockAdapterEvents.zclPayload({
+                wasBroadcast: false,
+                address: "0x177",
+                clusterID: frame.cluster.ID,
+                data: frame.toBuffer(),
+                header: frame.header,
+                endpoint: 1,
+                linkquality: 50,
+                groupID: 0,
+            });
+            expect(events.message.length).toBe(1);
+            expect(events.message[0].data).toMatchObject({calibrationMode: 4});
+            expect(events.message[0].data).not.toMatchObject({tuyaMotorReversal: 4});
+        });
+
+        // ZCLFrame without manufacturer specific flag or manufacturer code set, to generic device
+        it("Should resolve generic cluster attribute names on generic ZCL frames: generic target device", async () => {
+            const buffer = Buffer.from([24, 242, 10, 2, 240, 48, 4]);
+            await controller.start();
+            await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
+            const frame = Zcl.Frame.fromBuffer(
+                Zcl.Utils.getCluster("closuresWindowCovering", undefined, {}).ID,
+                Zcl.Header.fromBuffer(buffer),
+                buffer,
+                {},
+            );
+            await mockAdapterEvents.zclPayload({
+                wasBroadcast: false,
+                address: "0x129",
+                clusterID: frame.cluster.ID,
+                data: frame.toBuffer(),
+                header: frame.header,
+                endpoint: 1,
+                linkquality: 50,
+                groupID: 0,
+            });
+            expect(events.message.length).toBe(1);
+            expect(events.message[0].data).toMatchObject({tuyaMotorReversal: 4});
+            expect(events.message[0].data).not.toMatchObject({calibrationMode: 4});
+        });
+
+        // ZCLFrame without manufacturer specific flag set or manufacturer code set, to specific device (Legrand only)
+        it("Should resolve manufacturer specific cluster attribute names on generic ZCL frames: Legrand target device", async () => {
+            const buffer = Buffer.from([24, 242, 10, 2, 240, 48, 4]);
+            await controller.start();
+            await mockAdapterEvents.deviceJoined({networkAddress: 177, ieeeAddr: "0x177"});
+            const frame = Zcl.Frame.fromBuffer(
+                Zcl.Utils.getCluster("closuresWindowCovering", undefined, {}).ID,
+                Zcl.Header.fromBuffer(buffer),
+                buffer,
+                {},
+            );
+            await mockAdapterEvents.zclPayload({
+                wasBroadcast: false,
+                address: "0x177",
+                clusterID: frame.cluster.ID,
+                data: frame.toBuffer(),
+                header: frame.header,
+                endpoint: 1,
+                linkquality: 50,
+                groupID: 0,
+            });
+            expect(events.message.length).toBe(1);
+            expect(events.message[0].data).toMatchObject({calibrationMode: 4});
+            expect(events.message[0].data).not.toMatchObject({tuyaMotorReversal: 4});
+        });
     });
 
-    // ZCLFrame with manufacturer specific flag and manufacturer code defined, to specific device
-    // ZCLFrameConverter should not modify specific frames!
-    it("Should resolve manufacturer specific cluster attribute names on specific ZCL frames: specific target device", async () => {
-        const buffer = Buffer.from([28, 33, 16, 13, 1, 2, 240, 0, 48, 4]);
-        await controller.start();
-        await mockAdapterEvents.deviceJoined({networkAddress: 177, ieeeAddr: "0x177"});
-        const frame = Zcl.Frame.fromBuffer(
-            Zcl.Utils.getCluster("closuresWindowCovering", undefined, {}).ID,
-            Zcl.Header.fromBuffer(buffer),
-            buffer,
-            {},
-        );
-        await mockAdapterEvents.zclPayload({
-            wasBroadcast: false,
-            address: "0x177",
-            clusterID: frame.cluster.ID,
-            data: frame.toBuffer(),
-            header: frame.header,
-            endpoint: 1,
-            linkquality: 50,
-            groupID: 0,
-        });
-        expect(events.message.length).toBe(1);
-        expect(events.message[0].data).toMatchObject({calibrationMode: 4});
-        expect(events.message[0].data).not.toMatchObject({tuyaMotorReversal: 4});
-    });
+    describe("ZCL frame converter attributeList", () => {
+        // ZCLFrame with manufacturer specific flag and manufacturer code defined, to generic device
+        // ZCLFrameConverter should not modify specific frames!
+        it("Should resolve manufacturer specific cluster attribute names on specific ZCL frames: generic target device", async () => {
+            const buffer = Buffer.from([28, 33, 16, 13, 0, 2, 240]);
+            await controller.start();
+            await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
 
-    // ZCLFrame without manufacturer specific flag or manufacturer code set, to generic device
-    it("Should resolve generic cluster attribute names on generic ZCL frames: generic target device", async () => {
-        const buffer = Buffer.from([24, 242, 10, 2, 240, 48, 4]);
-        await controller.start();
-        await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
-        const frame = Zcl.Frame.fromBuffer(
-            Zcl.Utils.getCluster("closuresWindowCovering", undefined, {}).ID,
-            Zcl.Header.fromBuffer(buffer),
-            buffer,
-            {},
-        );
-        await mockAdapterEvents.zclPayload({
-            wasBroadcast: false,
-            address: "0x129",
-            clusterID: frame.cluster.ID,
-            data: frame.toBuffer(),
-            header: frame.header,
-            endpoint: 1,
-            linkquality: 50,
-            groupID: 0,
+            const frame = Zcl.Frame.fromBuffer(
+                Zcl.Utils.getCluster("closuresWindowCovering", undefined, {}).ID,
+                Zcl.Header.fromBuffer(buffer),
+                buffer,
+                {},
+            );
+            await mockAdapterEvents.zclPayload({
+                wasBroadcast: false,
+                address: "0x129",
+                clusterID: frame.cluster.ID,
+                data: frame.toBuffer(),
+                header: frame.header,
+                endpoint: 1,
+                linkquality: 50,
+                groupID: 0,
+            });
+            expect(events.message.length).toBe(1);
+            expect(events.message[0].data).toStrictEqual(["calibrationMode"]);
         });
-        expect(events.message.length).toBe(1);
-        expect(events.message[0].data).toMatchObject({tuyaMotorReversal: 4});
-        expect(events.message[0].data).not.toMatchObject({calibrationMode: 4});
-    });
 
-    // ZCLFrame without manufacturer specific flag set or manufacturer code set, to specific device (Legrand only)
-    it("Should resolve manufacturer specific cluster attribute names on generic ZCL frames: Legrand target device", async () => {
-        const buffer = Buffer.from([24, 242, 10, 2, 240, 48, 4]);
-        await controller.start();
-        await mockAdapterEvents.deviceJoined({networkAddress: 177, ieeeAddr: "0x177"});
-        const frame = Zcl.Frame.fromBuffer(
-            Zcl.Utils.getCluster("closuresWindowCovering", undefined, {}).ID,
-            Zcl.Header.fromBuffer(buffer),
-            buffer,
-            {},
-        );
-        await mockAdapterEvents.zclPayload({
-            wasBroadcast: false,
-            address: "0x177",
-            clusterID: frame.cluster.ID,
-            data: frame.toBuffer(),
-            header: frame.header,
-            endpoint: 1,
-            linkquality: 50,
-            groupID: 0,
+        // ZCLFrame with manufacturer specific flag and manufacturer code defined, to specific device
+        // ZCLFrameConverter should not modify specific frames!
+        it("Should resolve manufacturer specific cluster attribute names on specific ZCL frames: specific target device", async () => {
+            const buffer = Buffer.from([28, 33, 16, 13, 0, 2, 240]);
+            await controller.start();
+            await mockAdapterEvents.deviceJoined({networkAddress: 177, ieeeAddr: "0x177"});
+            const frame = Zcl.Frame.fromBuffer(
+                Zcl.Utils.getCluster("closuresWindowCovering", undefined, {}).ID,
+                Zcl.Header.fromBuffer(buffer),
+                buffer,
+                {},
+            );
+            await mockAdapterEvents.zclPayload({
+                wasBroadcast: false,
+                address: "0x177",
+                clusterID: frame.cluster.ID,
+                data: frame.toBuffer(),
+                header: frame.header,
+                endpoint: 1,
+                linkquality: 50,
+                groupID: 0,
+            });
+            expect(events.message.length).toBe(1);
+            expect(events.message[0].data).toStrictEqual(["calibrationMode"]);
         });
-        expect(events.message.length).toBe(1);
-        expect(events.message[0].data).toMatchObject({calibrationMode: 4});
-        expect(events.message[0].data).not.toMatchObject({tuyaMotorReversal: 4});
+
+        // ZCLFrame without manufacturer specific flag or manufacturer code set, to generic device
+        it("Should resolve generic cluster attribute names on generic ZCL frames: generic target device", async () => {
+            const buffer = Buffer.from([24, 242, 0, 2, 240]);
+            await controller.start();
+            await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
+            const frame = Zcl.Frame.fromBuffer(
+                Zcl.Utils.getCluster("closuresWindowCovering", undefined, {}).ID,
+                Zcl.Header.fromBuffer(buffer),
+                buffer,
+                {},
+            );
+            await mockAdapterEvents.zclPayload({
+                wasBroadcast: false,
+                address: "0x129",
+                clusterID: frame.cluster.ID,
+                data: frame.toBuffer(),
+                header: frame.header,
+                endpoint: 1,
+                linkquality: 50,
+                groupID: 0,
+            });
+            expect(events.message.length).toBe(1);
+            expect(events.message[0].data).toStrictEqual(["tuyaMotorReversal"]);
+        });
+
+        // ZCLFrame without manufacturer specific flag set or manufacturer code set, to specific device (Legrand only)
+        it("Should resolve manufacturer specific cluster attribute names on generic ZCL frames: Legrand target device", async () => {
+            const buffer = Buffer.from([24, 242, 0, 2, 240]);
+            await controller.start();
+            await mockAdapterEvents.deviceJoined({networkAddress: 177, ieeeAddr: "0x177"});
+            const frame = Zcl.Frame.fromBuffer(
+                Zcl.Utils.getCluster("closuresWindowCovering", undefined, {}).ID,
+                Zcl.Header.fromBuffer(buffer),
+                buffer,
+                {},
+            );
+            await mockAdapterEvents.zclPayload({
+                wasBroadcast: false,
+                address: "0x177",
+                clusterID: frame.cluster.ID,
+                data: frame.toBuffer(),
+                header: frame.header,
+                endpoint: 1,
+                linkquality: 50,
+                groupID: 0,
+            });
+            expect(events.message.length).toBe(1);
+            expect(events.message[0].data).toStrictEqual(["calibrationMode"]);
+        });
     });
 
     it("zclCommand", async () => {
@@ -9346,10 +9615,11 @@ describe("Controller", () => {
         const device = controller.getDeviceByIeeeAddr("0x177")!;
 
         device.addCustomCluster("manuHerdsman", {
+            name: "manuHerdsman",
             ID: 64513,
             commands: {},
             commandsResponse: {},
-            attributes: {customAttr: {ID: 0, type: Zcl.DataType.UINT8, write: true}},
+            attributes: {customAttr: {name: "customAttr", ID: 0, type: Zcl.DataType.UINT8, write: true}},
         });
 
         const group = controller.createGroup(34);
@@ -9401,20 +9671,21 @@ describe("Controller", () => {
 
         const device2 = controller.getDeviceByIeeeAddr("0x178")!;
         device2.addCustomCluster("manuHerdsman", {
+            name: "manuHerdsman",
             ID: 64513,
             commands: {},
             commandsResponse: {},
-            attributes: {customAttr: {ID: 0, type: Zcl.DataType.UINT8}},
+            attributes: {customAttr: {name: "customAttr", ID: 0, type: Zcl.DataType.UINT8}},
         });
         group.addMember(device2.getEndpoint(2)!);
 
         await expect(async () => {
             await group.write("manuHerdsman", {customAttr: 14}, {});
-        }).rejects.toThrow(new Error(`Cluster with name 'manuHerdsman' does not exist`));
+        }).rejects.toThrow(new Zcl.StatusError(Zcl.Status.UNSUPPORTED_CLUSTER, "manuHerdsman"));
 
         await expect(async () => {
             await group.read("manuHerdsman", ["customAttr"], {});
-        }).rejects.toThrow(new Error(`Cluster with name 'manuHerdsman' does not exist`));
+        }).rejects.toThrow(new Zcl.StatusError(Zcl.Status.UNSUPPORTED_CLUSTER, "manuHerdsman"));
 
         await group.write<"manuHerdsman", CustomManuHerdsman>("manuHerdsman", {customAttr: 14}, {direction: Zcl.Direction.SERVER_TO_CLIENT});
         await group.read<"manuHerdsman", CustomManuHerdsman>("manuHerdsman", ["customAttr"], {direction: Zcl.Direction.SERVER_TO_CLIENT});
@@ -9440,20 +9711,21 @@ describe("Controller", () => {
 
         const device3 = controller.getDeviceByIeeeAddr("0x176")!;
         device3.addCustomCluster("manuHerdsman", {
+            name: "manuHerdsman",
             ID: 64513,
             commands: {},
             commandsResponse: {},
-            attributes: {customAttr: {ID: 0, type: Zcl.DataType.UINT8}},
+            attributes: {customAttr: {name: "customAttr", ID: 0, type: Zcl.DataType.UINT8}},
         });
         group.addMember(device3.getEndpoint(1)!);
 
         await expect(async () => {
             await group.write("manuHerdsman", {customAttr: 56}, {});
-        }).rejects.toThrow(new Error(`Cluster with name 'manuHerdsman' does not exist`));
+        }).rejects.toThrow(new Zcl.StatusError(Zcl.Status.UNSUPPORTED_CLUSTER, "manuHerdsman"));
 
         await expect(async () => {
             await group.read("manuHerdsman", ["customAttr"], {});
-        }).rejects.toThrow(new Error(`Cluster with name 'manuHerdsman' does not exist`));
+        }).rejects.toThrow(new Zcl.StatusError(Zcl.Status.UNSUPPORTED_CLUSTER, "manuHerdsman"));
     });
 
     it("does not read/write to group with non-common custom clusters", async () => {
@@ -9463,10 +9735,11 @@ describe("Controller", () => {
         const device = controller.getDeviceByIeeeAddr("0x177")!;
 
         device.addCustomCluster("manuHerdsman", {
+            name: "manuHerdsman",
             ID: 64513,
             commands: {},
             commandsResponse: {},
-            attributes: {customAttr: {ID: 0, type: Zcl.DataType.UINT8}},
+            attributes: {customAttr: {name: "customAttr", ID: 0, type: Zcl.DataType.UINT8}},
         });
 
         const group = controller.createGroup(34);
@@ -9480,11 +9753,11 @@ describe("Controller", () => {
 
         await expect(async () => {
             await group.write("manuHerdsman", {customAttr: 34}, {});
-        }).rejects.toThrow(new Error(`Cluster with name 'manuHerdsman' does not exist`));
+        }).rejects.toThrow(new Zcl.StatusError(Zcl.Status.UNSUPPORTED_CLUSTER, "manuHerdsman"));
 
         await expect(async () => {
             await group.read("manuHerdsman", ["customAttr"], {});
-        }).rejects.toThrow(new Error(`Cluster with name 'manuHerdsman' does not exist`));
+        }).rejects.toThrow(new Zcl.StatusError(Zcl.Status.UNSUPPORTED_CLUSTER, "manuHerdsman"));
     });
 
     it("sends & receives command to group with custom cluster when common to all members", async () => {
@@ -9494,12 +9767,14 @@ describe("Controller", () => {
         const device = controller.getDeviceByIeeeAddr("0x179")!;
 
         device.addCustomCluster("manuSpecificInovelli", {
+            name: "manuSpecificInovelli",
             ID: 64561,
             manufacturerCode: Zcl.ManufacturerCode.V_MARK_ENTERPRISES_INC,
             // omitted for brevity (unused here)
             attributes: {},
             commands: {
                 ledEffect: {
+                    name: "ledEffect",
                     ID: 1,
                     parameters: [
                         {name: "effect", type: Zcl.DataType.UINT8},
@@ -9509,6 +9784,7 @@ describe("Controller", () => {
                     ],
                 },
                 individualLedEffect: {
+                    name: "individualLedEffect",
                     ID: 3,
                     parameters: [
                         {name: "led", type: Zcl.DataType.UINT8},
@@ -9520,10 +9796,7 @@ describe("Controller", () => {
                 },
             },
             commandsResponse: {
-                bogus: {
-                    ID: 1,
-                    parameters: [{name: "xyz", type: Zcl.DataType.UINT8}],
-                },
+                bogus: {name: "bogus", ID: 1, parameters: [{name: "xyz", type: Zcl.DataType.UINT8}]},
             },
         });
 
@@ -9616,7 +9889,7 @@ describe("Controller", () => {
                 level: 200,
                 duration: 15,
             });
-        }).rejects.toThrow(new Error(`Cluster with name 'manuSpecificInovelli' does not exist`));
+        }).rejects.toThrow(new Zcl.StatusError(Zcl.Status.UNSUPPORTED_CLUSTER, "manuSpecificInovelli"));
     });
 
     it("Updates a device genBasic properties", async () => {
@@ -9862,10 +10135,12 @@ describe("Controller", () => {
 
         const myCustomClusters: CustomClusters = {
             zhSpe: {
+                name: "zhSpe",
                 ID: 0xffc1,
                 attributes: {},
                 commands: {
                     readMe: {
+                        name: "readMe",
                         ID: 0,
                         parameters: [{name: "size", type: Zcl.DataType.UINT8}],
                     },
@@ -9948,7 +10223,7 @@ describe("Controller", () => {
 
         // coverage: prevent crash in onZclPayload when ZCL metadata validation fails
         expect(mockLogger.debug).toHaveBeenCalledWith(
-            "Ignoring attribute modelId from response: Error: modelId requires max length of 32",
+            "Ignoring attribute modelId from response: Error: Status 'INVALID_VALUE' modelId requires max length of 32",
             "zh:controller:zcl",
         );
         expect(device.genBasic.modelId).toStrictEqual(" other multi-endpoint device");
@@ -9958,6 +10233,7 @@ describe("Controller", () => {
         await controller.start();
         await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
         const device = controller.getDeviceByIeeeAddr("0x129")!;
+        device.addCustomCluster("hvacThermostat", CUSTOM_CLUSTERS.hvacThermostat);
         const endpoint = device.getEndpoint(1)!;
         const zclCommandSpy = vi.spyOn(endpoint, "zclCommand");
 
@@ -9984,24 +10260,24 @@ describe("Controller", () => {
         await expect(endpoint.write("hvacThermostat", writePayloadRaw)).rejects.toThrow(
             "Cannot have attributes with different manufacturerCode in single 'write' call",
         );
-        await expect(endpoint.read("hvacThermostat", readPayload)).rejects.toThrow(
+        await expect(endpoint.read<"hvacThermostat", CustomClustersTypes["hvacThermostat"]>("hvacThermostat", readPayload)).rejects.toThrow(
             "Cannot have attributes with different manufacturerCode in single 'read' call",
         );
-        await expect(endpoint.read("hvacThermostat", readPayloadRaw)).rejects.toThrow(
+        await expect(endpoint.read<"hvacThermostat", CustomClustersTypes["hvacThermostat"]>("hvacThermostat", readPayloadRaw)).rejects.toThrow(
             "Cannot have attributes with different manufacturerCode in single 'read' call",
         );
-        await expect(endpoint.configureReporting("hvacThermostat", configureReportingPayload)).rejects.toThrow(
-            "Cannot have attributes with different manufacturerCode in single 'configureReporting' call",
-        );
-        await expect(endpoint.configureReporting("hvacThermostat", configureReportingPayloadRaw)).rejects.toThrow(
-            "Cannot have attributes with different manufacturerCode in single 'configureReporting' call",
-        );
-        await expect(endpoint.readReportingConfig("hvacThermostat", readReportingConfigPayload)).rejects.toThrow(
-            "Cannot have attributes with different manufacturerCode in single 'readReportingConfig' call",
-        );
-        await expect(endpoint.readReportingConfig("hvacThermostat", readReportingConfigPayloadRaw)).rejects.toThrow(
-            "Cannot have attributes with different manufacturerCode in single 'readReportingConfig' call",
-        );
+        await expect(
+            endpoint.configureReporting<"hvacThermostat", CustomClustersTypes["hvacThermostat"]>("hvacThermostat", configureReportingPayload),
+        ).rejects.toThrow("Cannot have attributes with different manufacturerCode in single 'configureReporting' call");
+        await expect(
+            endpoint.configureReporting<"hvacThermostat", CustomClustersTypes["hvacThermostat"]>("hvacThermostat", configureReportingPayloadRaw),
+        ).rejects.toThrow("Cannot have attributes with different manufacturerCode in single 'configureReporting' call");
+        await expect(
+            endpoint.readReportingConfig<"hvacThermostat", CustomClustersTypes["hvacThermostat"]>("hvacThermostat", readReportingConfigPayload),
+        ).rejects.toThrow("Cannot have attributes with different manufacturerCode in single 'readReportingConfig' call");
+        await expect(
+            endpoint.readReportingConfig<"hvacThermostat", CustomClustersTypes["hvacThermostat"]>("hvacThermostat", readReportingConfigPayloadRaw),
+        ).rejects.toThrow("Cannot have attributes with different manufacturerCode in single 'readReportingConfig' call");
 
         //-- with override manufacturer code
 
@@ -10013,24 +10289,40 @@ describe("Controller", () => {
         await expect(endpoint.write("hvacThermostat", writePayloadRaw, manufOpts)).rejects.toThrow(
             "Cannot have attributes with different manufacturerCode in single 'write' call",
         );
-        await expect(endpoint.read("hvacThermostat", readPayload, manufOpts)).rejects.toThrow(
-            "Cannot have attributes with different manufacturerCode in single 'read' call",
-        );
-        await expect(endpoint.read("hvacThermostat", readPayloadRaw, manufOpts)).rejects.toThrow(
-            "Cannot have attributes with different manufacturerCode in single 'read' call",
-        );
-        await expect(endpoint.configureReporting("hvacThermostat", configureReportingPayload, manufOpts)).rejects.toThrow(
-            "Cannot have attributes with different manufacturerCode in single 'configureReporting' call",
-        );
-        await expect(endpoint.configureReporting("hvacThermostat", configureReportingPayloadRaw, manufOpts)).rejects.toThrow(
-            "Cannot have attributes with different manufacturerCode in single 'configureReporting' call",
-        );
-        await expect(endpoint.readReportingConfig("hvacThermostat", readReportingConfigPayload, manufOpts)).rejects.toThrow(
-            "Cannot have attributes with different manufacturerCode in single 'readReportingConfig' call",
-        );
-        await expect(endpoint.readReportingConfig("hvacThermostat", readReportingConfigPayloadRaw, manufOpts)).rejects.toThrow(
-            "Cannot have attributes with different manufacturerCode in single 'readReportingConfig' call",
-        );
+        await expect(
+            endpoint.read<"hvacThermostat", CustomClustersTypes["hvacThermostat"]>("hvacThermostat", readPayload, manufOpts),
+        ).rejects.toThrow("Cannot have attributes with different manufacturerCode in single 'read' call");
+        await expect(
+            endpoint.read<"hvacThermostat", CustomClustersTypes["hvacThermostat"]>("hvacThermostat", readPayloadRaw, manufOpts),
+        ).rejects.toThrow("Cannot have attributes with different manufacturerCode in single 'read' call");
+        await expect(
+            endpoint.configureReporting<"hvacThermostat", CustomClustersTypes["hvacThermostat"]>(
+                "hvacThermostat",
+                configureReportingPayload,
+                manufOpts,
+            ),
+        ).rejects.toThrow("Cannot have attributes with different manufacturerCode in single 'configureReporting' call");
+        await expect(
+            endpoint.configureReporting<"hvacThermostat", CustomClustersTypes["hvacThermostat"]>(
+                "hvacThermostat",
+                configureReportingPayloadRaw,
+                manufOpts,
+            ),
+        ).rejects.toThrow("Cannot have attributes with different manufacturerCode in single 'configureReporting' call");
+        await expect(
+            endpoint.readReportingConfig<"hvacThermostat", CustomClustersTypes["hvacThermostat"]>(
+                "hvacThermostat",
+                readReportingConfigPayload,
+                manufOpts,
+            ),
+        ).rejects.toThrow("Cannot have attributes with different manufacturerCode in single 'readReportingConfig' call");
+        await expect(
+            endpoint.readReportingConfig<"hvacThermostat", CustomClustersTypes["hvacThermostat"]>(
+                "hvacThermostat",
+                readReportingConfigPayloadRaw,
+                manufOpts,
+            ),
+        ).rejects.toThrow("Cannot have attributes with different manufacturerCode in single 'readReportingConfig' call");
 
         expect(zclCommandSpy).toHaveBeenCalledTimes(0);
     });

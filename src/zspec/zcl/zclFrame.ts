@@ -1,17 +1,20 @@
+import assert from "node:assert";
 import "../../utils/patchBigIntSerialization";
 
 import {BuffaloZcl} from "./buffaloZcl";
 import type {TClusterPayload, TFoundationPayload} from "./definition/clusters-types";
-import {BuffaloZclDataType, DataType, Direction, FrameType, ParameterCondition} from "./definition/enums";
-import type {FoundationCommandName} from "./definition/foundation";
+import {BuffaloZclDataType, type DataType, Direction, FrameType, ParameterCondition} from "./definition/enums";
+import type {FoundationCommandName, FoundationDefinition} from "./definition/foundation";
+import {Status} from "./definition/status";
 import type {BuffaloZclOptions, Cluster, ClusterName, Command, CustomClusters, Parameter} from "./definition/tstype";
 import * as Utils from "./utils";
 import {ZclHeader} from "./zclHeader";
+import {ZclStatusError} from "./zclStatusError";
 
 // biome-ignore lint/suspicious/noExplicitAny: API
 type ZclPayload = any;
 
-const ListTypes: number[] = [
+const LIST_TYPES: readonly (DataType | BuffaloZclDataType)[] = [
     BuffaloZclDataType.LIST_UINT8,
     BuffaloZclDataType.LIST_UINT16,
     BuffaloZclDataType.LIST_UINT24,
@@ -23,9 +26,9 @@ export class ZclFrame {
     public readonly header: ZclHeader;
     public readonly payload: ZclPayload;
     public readonly cluster: Cluster;
-    public readonly command: Command;
+    public readonly command: Command | FoundationDefinition;
 
-    private constructor(header: ZclHeader, payload: ZclPayload, cluster: Cluster, command: Command) {
+    private constructor(header: ZclHeader, payload: ZclPayload, cluster: Cluster, command: Command | FoundationDefinition) {
         this.header = header;
         this.payload = payload;
         this.cluster = cluster;
@@ -45,21 +48,21 @@ export class ZclFrame {
         disableDefaultResponse: boolean,
         manufacturerCode: number | undefined,
         transactionSequenceNumber: number,
-        commandKey: number | string | Command,
+        commandKey: number | string | Command | FoundationDefinition,
         clusterKey: number | string | Cluster,
         payload: ZclPayload,
         customClusters: CustomClusters,
         reservedBits = 0,
     ): ZclFrame {
         const cluster = typeof clusterKey === "object" ? clusterKey : Utils.getCluster(clusterKey, manufacturerCode, customClusters);
-        const command: Command =
+        const command: Command | FoundationDefinition =
             typeof commandKey === "object"
                 ? commandKey
                 : frameType === FrameType.GLOBAL
                   ? Utils.getGlobalCommand(commandKey)
                   : direction === Direction.CLIENT_TO_SERVER
-                    ? cluster.getCommand(commandKey)
-                    : cluster.getCommandResponse(commandKey);
+                    ? Utils.getClusterCommand(cluster, commandKey)
+                    : Utils.getClusterCommandResponse(cluster, commandKey);
 
         const header = new ZclHeader(
             {reservedBits, frameType, direction, disableDefaultResponse, manufacturerSpecific: manufacturerCode != null},
@@ -87,45 +90,14 @@ export class ZclFrame {
     }
 
     private writePayloadGlobal(buffalo: BuffaloZcl): void {
-        const command = Utils.getFoundationCommand(this.command.ID);
+        assert("write" in this.command);
 
-        if (command.parseStrategy === "repetitive") {
-            for (const entry of this.payload) {
-                for (const parameter of command.parameters) {
-                    const options: BuffaloZclOptions = {};
-
-                    if (!ZclFrame.conditionsValid(parameter, entry, undefined)) {
-                        continue;
-                    }
-
-                    if (parameter.type === BuffaloZclDataType.USE_DATA_TYPE && typeof entry.dataType === "number") {
-                        // We need to grab the dataType to parse useDataType
-                        options.dataType = entry.dataType;
-                    }
-
-                    buffalo.write(parameter.type, entry[parameter.name], options);
-                }
-            }
-        } else if (command.parseStrategy === "flat") {
-            for (const parameter of command.parameters) {
-                buffalo.write(parameter.type, this.payload[parameter.name], {});
-            }
-        } else {
-            if (command.parseStrategy === "oneof") {
-                if (Utils.isFoundationDiscoverRsp(command.ID)) {
-                    buffalo.writeUInt8(this.payload.discComplete);
-
-                    for (const entry of this.payload.attrInfos) {
-                        for (const parameter of command.parameters) {
-                            buffalo.write(parameter.type, entry[parameter.name], {});
-                        }
-                    }
-                }
-            }
-        }
+        this.command.write(buffalo, this.payload);
     }
 
     private writePayloadCluster(buffalo: BuffaloZcl): void {
+        assert("parameters" in this.command);
+
         for (const parameter of this.command.parameters) {
             if (!ZclFrame.conditionsValid(parameter, this.payload, undefined)) {
                 continue;
@@ -159,11 +131,11 @@ export class ZclFrame {
 
         const buffalo = new BuffaloZcl(buffer, header.length);
         const cluster = Utils.getCluster(clusterID, header.manufacturerCode, customClusters);
-        const command: Command = header.isGlobal
+        const command: Command | FoundationDefinition = header.isGlobal
             ? Utils.getGlobalCommand(header.commandIdentifier)
             : header.frameControl.direction === Direction.CLIENT_TO_SERVER
-              ? cluster.getCommand(header.commandIdentifier)
-              : cluster.getCommandResponse(header.commandIdentifier);
+              ? Utils.getClusterCommand(cluster, header.commandIdentifier)
+              : Utils.getClusterCommandResponse(cluster, header.commandIdentifier);
         const payload = ZclFrame.parsePayload(header, cluster, buffalo);
 
         return new ZclFrame(header, payload, cluster, command);
@@ -184,8 +156,8 @@ export class ZclFrame {
     private static parsePayloadCluster(header: ZclHeader, cluster: Cluster, buffalo: BuffaloZcl): ZclPayload {
         const command =
             header.frameControl.direction === Direction.CLIENT_TO_SERVER
-                ? cluster.getCommand(header.commandIdentifier)
-                : cluster.getCommandResponse(header.commandIdentifier);
+                ? Utils.getClusterCommand(cluster, header.commandIdentifier)
+                : Utils.getClusterCommandResponse(cluster, header.commandIdentifier);
         const payload: ZclPayload = {};
 
         for (const parameter of command.parameters) {
@@ -195,7 +167,7 @@ export class ZclFrame {
                 continue;
             }
 
-            if (ListTypes.includes(parameter.type)) {
+            if (LIST_TYPES.includes(parameter.type)) {
                 const lengthParameter = command.parameters[command.parameters.indexOf(parameter) - 1];
                 const length = payload[lengthParameter.name];
 
@@ -208,7 +180,7 @@ export class ZclFrame {
                 const valueToProcess = buffalo.read(parameter.type, options);
                 payload[parameter.name] = Utils.processParameterRead(parameter, valueToProcess);
             } catch (error) {
-                throw new Error(`Cannot parse '${command.name}:${parameter.name}' (${(error as Error).message})`);
+                throw new ZclStatusError(Status.INVALID_FIELD, `${cluster.name}:${command.name}:${parameter.name} (${(error as Error).message})`);
             }
         }
 
@@ -218,78 +190,7 @@ export class ZclFrame {
     private static parsePayloadGlobal(header: ZclHeader, buffalo: BuffaloZcl): ZclPayload {
         const command = Utils.getFoundationCommand(header.commandIdentifier);
 
-        if (command.parseStrategy === "repetitive") {
-            const payload = [];
-
-            while (buffalo.isMore()) {
-                // biome-ignore lint/suspicious/noExplicitAny: API
-                const entry: {[s: string]: any} = {};
-
-                for (const parameter of command.parameters) {
-                    const options: BuffaloZclOptions = {};
-
-                    if (!ZclFrame.conditionsValid(parameter, entry, buffalo.getBuffer().length - buffalo.getPosition())) {
-                        continue;
-                    }
-
-                    if (parameter.type === BuffaloZclDataType.USE_DATA_TYPE && typeof entry.dataType === "number") {
-                        // We need to grab the dataType to parse useDataType
-                        options.dataType = entry.dataType;
-
-                        if (entry.dataType === DataType.CHAR_STR && entry.attrId === 65281) {
-                            // [workaround] parse char str as Xiaomi struct
-                            options.dataType = BuffaloZclDataType.MI_STRUCT;
-                        }
-                    }
-
-                    entry[parameter.name] = buffalo.read(parameter.type, options);
-
-                    // TODO: not needed, but temp workaroudn to make payload equal to that of zcl-packet
-                    // XXX: is this still needed?
-                    if (parameter.type === BuffaloZclDataType.USE_DATA_TYPE && entry.dataType === DataType.STRUCT) {
-                        entry.structElms = entry.attrData;
-                        entry.numElms = entry.attrData.length;
-                    }
-                }
-
-                payload.push(entry);
-            }
-
-            return payload;
-        }
-
-        if (command.parseStrategy === "flat") {
-            // biome-ignore lint/suspicious/noExplicitAny: API
-            const payload: {[s: string]: any} = {};
-
-            for (const parameter of command.parameters) {
-                payload[parameter.name] = buffalo.read(parameter.type, {});
-            }
-
-            return payload;
-        }
-
-        if (command.parseStrategy === "oneof") {
-            if (Utils.isFoundationDiscoverRsp(command.ID)) {
-                // biome-ignore lint/suspicious/noExplicitAny: API
-                const payload: {discComplete: number; attrInfos: {[k: string]: any}[]} = {
-                    discComplete: buffalo.readUInt8(),
-                    attrInfos: [],
-                };
-
-                while (buffalo.isMore()) {
-                    const entry: (typeof payload.attrInfos)[number] = {};
-
-                    for (const parameter of command.parameters) {
-                        entry[parameter.name] = buffalo.read(parameter.type, {});
-                    }
-
-                    payload.attrInfos.push(entry);
-                }
-
-                return payload;
-            }
-        }
+        return command.parse(buffalo);
     }
 
     /**
@@ -328,12 +229,6 @@ export class ZclFrame {
                     }
                     case ParameterCondition.MINIMUM_REMAINING_BUFFER_BYTES: {
                         if (remainingBufferBytes !== undefined && remainingBufferBytes < condition.value) {
-                            return false;
-                        }
-                        break;
-                    }
-                    case ParameterCondition.DATA_TYPE_CLASS_EQUAL: {
-                        if (Utils.getDataTypeClass(entry.dataType) !== condition.value) {
                             return false;
                         }
                         break;
@@ -379,5 +274,5 @@ export interface TFoundationZclFrame<Co extends string> {
     readonly header: ZclHeader;
     readonly payload: TFoundationPayload<Co>;
     readonly cluster: Cluster;
-    readonly command: Command;
+    readonly command: FoundationDefinition;
 }

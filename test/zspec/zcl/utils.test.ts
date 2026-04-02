@@ -1,23 +1,45 @@
 import {describe, expect, it} from "vitest";
 import * as Zcl from "../../../src/zspec/zcl";
 import {ZCL_TYPE_INVALID_BY_TYPE} from "../../../src/zspec/zcl/definition/datatypes";
-import type {Attribute, Command, CustomClusters, Parameter} from "../../../src/zspec/zcl/definition/tstype";
+import type {Attribute, CustomClusters, Parameter} from "../../../src/zspec/zcl/definition/tstype";
 
 const CUSTOM_CLUSTERS: CustomClusters = {
-    genBasic: {ID: Zcl.Clusters.genBasic.ID, commands: {}, commandsResponse: {}, attributes: {myCustomAttr: {ID: 65533, type: Zcl.DataType.UINT8}}},
-    myCustomCluster: {ID: 65534, commands: {}, commandsResponse: {}, attributes: {myCustomAttr: {ID: 65533, type: Zcl.DataType.UINT8}}},
+    genBasic: {
+        name: "genBasic",
+        ID: Zcl.Clusters.genBasic.ID,
+        commands: {},
+        commandsResponse: {},
+        attributes: {myCustomAttr: {name: "myCustomAttr", ID: 65533, type: Zcl.DataType.UINT8}},
+    },
+    myCustomCluster: {
+        name: "myCustomCluster",
+        ID: 65534,
+        commands: {},
+        commandsResponse: {},
+        attributes: {myCustomAttr: {name: "myCustomAttr", ID: 65533, type: Zcl.DataType.UINT8}},
+    },
     myCustomClusterManuf: {
+        name: "myCustomClusterManuf",
         ID: 65533,
         manufacturerCode: 65534,
         commands: {},
         commandsResponse: {},
-        attributes: {myCustomAttr: {ID: 65533, type: Zcl.DataType.UINT8}},
+        attributes: {myCustomAttr: {name: "myCustomAttr", ID: 65533, type: Zcl.DataType.UINT8}},
     },
-    manuSpecificProfalux1NoManuf: {
-        ID: Zcl.Clusters.manuSpecificProfalux1.ID,
+    myCustomWithManufAttr: {
+        name: "haDiagnostic",
+        ID: 0x0b05,
+        manufacturerCode: Zcl.ManufacturerCode.DANFOSS_A_S,
         commands: {},
         commandsResponse: {},
-        attributes: {myCustomAttr: {ID: 65533, type: Zcl.DataType.UINT8}},
+        attributes: {
+            danfossSystemStatusCode: {
+                name: "danfossSystemStatusCode",
+                ID: 65530,
+                type: Zcl.DataType.UINT8,
+                manufacturerCode: Zcl.ManufacturerCode.DANFOSS_A_S,
+            },
+        },
     },
 };
 
@@ -30,12 +52,10 @@ describe("ZCL Utils", () => {
         expect(zclError.message).toStrictEqual(`Status '${Zcl.Status[Zcl.Status.ABORT]}'`);
     });
 
-    it("Gets data type class", () => {
-        expect(Zcl.Utils.getDataTypeClass(Zcl.DataType.UINT16)).toStrictEqual(Zcl.DataTypeClass.ANALOG);
-        expect(Zcl.Utils.getDataTypeClass(Zcl.DataType.DATA16)).toStrictEqual(Zcl.DataTypeClass.DISCRETE);
-        expect(() => {
-            Zcl.Utils.getDataTypeClass(Zcl.DataType.NO_DATA);
-        }).toThrow();
+    it("Checks analog data type", () => {
+        expect(Zcl.Utils.isAnalogDataType(Zcl.DataType.UINT16)).toStrictEqual(true);
+        expect(Zcl.Utils.isAnalogDataType(Zcl.DataType.DATA16)).toStrictEqual(false);
+        expect(Zcl.Utils.isAnalogDataType(Zcl.DataType.NO_DATA)).toStrictEqual(false);
     });
 
     it.each([
@@ -52,13 +72,17 @@ describe("ZCL Utils", () => {
         ],
         [
             "by ID with non-matching manufacturer code",
-            {key: Zcl.Clusters.manuSpecificSinope.ID, manufacturerCode: 123, customClusters: {}},
-            {cluster: Zcl.Clusters.manuSpecificSinope, name: "manuSpecificSinope"},
+            {key: Zcl.Clusters.manuSpecificAmazonWWAH.ID, manufacturerCode: 123, customClusters: {}},
+            {cluster: Zcl.Clusters.manuSpecificAmazonWWAH, name: "manuSpecificAmazonWWAH"},
         ],
         [
             "by ID with matching manufacturer code",
-            {key: Zcl.Clusters.manuSpecificSinope.ID, manufacturerCode: Zcl.Clusters.manuSpecificSinope.manufacturerCode!, customClusters: {}},
-            {cluster: Zcl.Clusters.manuSpecificSinope, name: "manuSpecificSinope"},
+            {
+                key: Zcl.Clusters.manuSpecificAmazonWWAH.ID,
+                manufacturerCode: Zcl.Clusters.manuSpecificAmazonWWAH.manufacturerCode!,
+                customClusters: {},
+            },
+            {cluster: Zcl.Clusters.manuSpecificAmazonWWAH, name: "manuSpecificAmazonWWAH"},
         ],
         [
             "custom by ID",
@@ -94,15 +118,6 @@ describe("ZCL Utils", () => {
             {key: CUSTOM_CLUSTERS.genBasic.ID, manufacturerCode: undefined, customClusters: CUSTOM_CLUSTERS},
             {cluster: CUSTOM_CLUSTERS.genBasic, name: "genBasic"},
         ],
-        [
-            "by ID ignoring same custom ID if Zcl is better match with manufacturer code",
-            {
-                key: CUSTOM_CLUSTERS.manuSpecificProfalux1NoManuf.ID,
-                manufacturerCode: Zcl.ManufacturerCode.PROFALUX,
-                customClusters: CUSTOM_CLUSTERS,
-            },
-            {cluster: Zcl.Clusters.manuSpecificProfalux1, name: "manuSpecificProfalux1"},
-        ],
     ])("Gets cluster %s", (_name, payload, expected) => {
         const cluster = Zcl.Utils.getCluster(payload.key, payload.manufacturerCode, payload.customClusters);
 
@@ -115,9 +130,6 @@ describe("ZCL Utils", () => {
         }
 
         expect(cluster.manufacturerCode).toStrictEqual(expected.cluster.manufacturerCode);
-        expect(cluster.getAttribute).toBeInstanceOf(Function);
-        expect(cluster.getCommand).toBeInstanceOf(Function);
-        expect(cluster.getCommandResponse).toBeInstanceOf(Function);
     });
 
     it("Creates empty cluster when getting by invalid ID", () => {
@@ -128,9 +140,6 @@ describe("ZCL Utils", () => {
         expect(cluster.attributes).toStrictEqual({});
         expect(cluster.commands).toStrictEqual({});
         expect(cluster.commandsResponse).toStrictEqual({});
-        expect(cluster.getAttribute).toBeInstanceOf(Function);
-        expect(cluster.getCommand).toBeInstanceOf(Function);
-        expect(cluster.getCommandResponse).toBeInstanceOf(Function);
     });
 
     it("Throws when getting invalid cluster name", () => {
@@ -154,9 +163,9 @@ describe("ZCL Utils", () => {
         [
             "by ID with matching manufacturer code",
             {
-                key: Zcl.Clusters.haDiagnostic.attributes.danfossSystemStatusCode.ID,
+                key: CUSTOM_CLUSTERS.myCustomWithManufAttr.attributes.danfossSystemStatusCode.ID,
                 manufacturerCode: Zcl.ManufacturerCode.DANFOSS_A_S,
-                customClusters: {},
+                customClusters: CUSTOM_CLUSTERS,
             },
             {cluster: Zcl.Clusters.haDiagnostic, name: "danfossSystemStatusCode"},
         ],
@@ -172,20 +181,22 @@ describe("ZCL Utils", () => {
         ],
     ])("Gets and checks cluster attribute %s", (_name, payload, expected) => {
         const cluster = Zcl.Utils.getCluster(expected.cluster.ID, payload.manufacturerCode, payload.customClusters);
-        const attribute = cluster.getAttribute(payload.key);
+        const attribute = Zcl.Utils.getClusterAttribute(cluster, payload.key, payload.manufacturerCode);
         expect(attribute).not.toBeUndefined();
         expect(attribute).toStrictEqual(cluster.attributes[expected.name]);
     });
 
     it("Returns undefined when getting invalid attribute", () => {
         const cluster = Zcl.Utils.getCluster(Zcl.Clusters.genAlarms.ID, undefined, {});
-        expect(cluster.getAttribute("abcd")).toBeUndefined();
-        expect(cluster.getAttribute(99999)).toBeUndefined();
+        expect(Zcl.Utils.getClusterAttribute(cluster, "abcd", undefined)).toBeUndefined();
+        expect(Zcl.Utils.getClusterAttribute(cluster, 99999, undefined)).toBeUndefined();
     });
 
     it("Returns undefined when getting attribute with invalid manufacturer code", () => {
-        const cluster = Zcl.Utils.getCluster(Zcl.Clusters.haDiagnostic.ID, 123, {});
-        expect(cluster.getAttribute(Zcl.Clusters.haDiagnostic.attributes.danfossSystemStatusCode.ID)).toBeUndefined();
+        const cluster = Zcl.Utils.getCluster(Zcl.Clusters.haDiagnostic.ID, 123, CUSTOM_CLUSTERS);
+        expect(
+            Zcl.Utils.getClusterAttribute(cluster, CUSTOM_CLUSTERS.myCustomWithManufAttr.attributes.danfossSystemStatusCode.ID, 123),
+        ).toBeUndefined();
     });
 
     it.each([
@@ -193,17 +204,17 @@ describe("ZCL Utils", () => {
         ["by name", {key: "resetAll"}, {cluster: Zcl.Clusters.genAlarms, name: "resetAll"}],
     ])("Gets cluster command %s", (_name, payload, expected) => {
         const cluster = Zcl.Utils.getCluster(expected.cluster.ID, undefined, {});
-        const command = cluster.getCommand(payload.key);
+        const command = Zcl.Utils.getClusterCommand(cluster, payload.key);
         expect(command).toStrictEqual(cluster.commands[expected.name]);
     });
 
     it("Throws when getting invalid command", () => {
         const cluster = Zcl.Utils.getCluster(Zcl.Clusters.genAlarms.ID, undefined, {});
         expect(() => {
-            cluster.getCommand("abcd");
+            Zcl.Utils.getClusterCommand(cluster, "abcd");
         }).toThrow();
         expect(() => {
-            cluster.getCommand(99999);
+            Zcl.Utils.getClusterCommand(cluster, 99999);
         }).toThrow();
     });
 
@@ -213,20 +224,20 @@ describe("ZCL Utils", () => {
             {key: Zcl.Clusters.genIdentify.commandsResponse.identifyQueryRsp.ID},
             {cluster: Zcl.Clusters.genIdentify, name: "identifyQueryRsp"},
         ],
-        ["by name", {key: "getEventLog"}, {cluster: Zcl.Clusters.genAlarms, name: "getEventLog"}],
+        ["by name", {key: "getRsp"}, {cluster: Zcl.Clusters.genAlarms, name: "getRsp"}],
     ])("Gets cluster command response %s", (_name, payload, expected) => {
         const cluster = Zcl.Utils.getCluster(expected.cluster.ID, undefined, {});
-        const commandResponse = cluster.getCommandResponse(payload.key);
+        const commandResponse = Zcl.Utils.getClusterCommandResponse(cluster, payload.key);
         expect(commandResponse).toStrictEqual(cluster.commandsResponse[expected.name]);
     });
 
     it("Throws when getting invalid command response", () => {
         const cluster = Zcl.Utils.getCluster(Zcl.Clusters.genAlarms.ID, undefined, {});
         expect(() => {
-            cluster.getCommandResponse("abcd");
+            Zcl.Utils.getClusterCommandResponse(cluster, "abcd");
         }).toThrow();
         expect(() => {
-            cluster.getCommandResponse(99999);
+            Zcl.Utils.getClusterCommandResponse(cluster, 99999);
         }).toThrow();
     });
 
@@ -234,17 +245,22 @@ describe("ZCL Utils", () => {
         ["by ID", {key: Zcl.Foundation.writeUndiv.ID}, {cluster: Zcl.Foundation.writeUndiv, name: "writeUndiv"}],
         ["by name", {key: "read"}, {cluster: Zcl.Foundation.read, name: "read"}],
     ])("Gets global command %s", (_name, payload, expected) => {
-        const command: Command = {
-            ID: expected.cluster.ID,
-            name: expected.name,
-            parameters: expected.cluster.parameters,
-        };
-
-        if (expected.cluster.response) {
-            command.response = expected.cluster.response;
-        }
-
-        expect(Zcl.Utils.getGlobalCommand(payload.key)).toStrictEqual(command);
+        expect(Zcl.Utils.getGlobalCommand(payload.key)).toMatchObject(
+            "response" in expected.cluster
+                ? {
+                      ID: expected.cluster.ID,
+                      name: expected.name,
+                      response: expected.cluster.response,
+                      parse: expect.any(Function),
+                      write: expect.any(Function),
+                  }
+                : {
+                      ID: expected.cluster.ID,
+                      name: expected.name,
+                      parse: expect.any(Function),
+                      write: expect.any(Function),
+                  },
+        );
     });
 
     it("Throws when getting invalid global command", () => {
@@ -264,12 +280,16 @@ describe("ZCL Utils", () => {
 
     it("Gets Foundation command", () => {
         expect(Zcl.Utils.getFoundationCommand(0)).toStrictEqual(Zcl.Foundation.read);
+        expect(Zcl.Utils.getFoundationCommandByName("read")).toStrictEqual(Zcl.Foundation.read);
     });
 
     it("Throws when getting invalid Foundation command ID", () => {
         expect(() => {
             Zcl.Utils.getFoundationCommand(9999);
-        }).toThrow(`Foundation command '9999' does not exist.`);
+        }).toThrow(`Status 'UNSUP_COMMAND' foundation:9999`);
+        expect(() => {
+            Zcl.Utils.getFoundationCommandByName("doesnotexist");
+        }).toThrow(`Status 'UNSUP_COMMAND' foundation:doesnotexist`);
     });
 
     function createAttribute(overrides: Partial<Attribute> = {}): Attribute {
@@ -327,24 +347,26 @@ describe("ZCL Utils", () => {
 
         it("level control for lighting attributes currentLevel and options", () => {
             const cluster = Zcl.Utils.getCluster("genLevelCtrl");
-            let result = Zcl.Utils.processAttributeWrite(cluster.getAttribute("options")!, 0x00);
+            let result = Zcl.Utils.processAttributeWrite(Zcl.Utils.getClusterAttribute(cluster, "options", undefined)!, 0x00);
             expect(result).toStrictEqual(0x00);
-            result = Zcl.Utils.processAttributeWrite(cluster.getAttribute("options")!, 0xff);
+            result = Zcl.Utils.processAttributeWrite(Zcl.Utils.getClusterAttribute(cluster, "options", undefined)!, 0xff);
             expect(result).toStrictEqual(0xff);
-            expect(() => Zcl.Utils.processAttributeWrite(cluster.getAttribute("currentLevel")!, 0x01)).toThrow(/not writable/i);
+            expect(() => Zcl.Utils.processAttributeWrite(Zcl.Utils.getClusterAttribute(cluster, "currentLevel", undefined)!, 0x01)).toThrow(
+                /not writable/i,
+            );
         });
 
         it("rssi location attributes coordinate1 and pathLossExponent", () => {
             const cluster = Zcl.Utils.getCluster("genRssiLocation");
-            let result = Zcl.Utils.processAttributeWrite(cluster.getAttribute("coordinate1")!, -0x8000);
+            let result = Zcl.Utils.processAttributeWrite(Zcl.Utils.getClusterAttribute(cluster, "coordinate1", undefined)!, -0x8000);
             expect(result).toStrictEqual(-0x8000);
-            result = Zcl.Utils.processAttributeWrite(cluster.getAttribute("coordinate1")!, 0x7fff);
+            result = Zcl.Utils.processAttributeWrite(Zcl.Utils.getClusterAttribute(cluster, "coordinate1", undefined)!, 0x7fff);
             expect(result).toStrictEqual(0x7fff);
-            result = Zcl.Utils.processAttributeWrite(cluster.getAttribute("coordinate1")!, 0x0012);
+            result = Zcl.Utils.processAttributeWrite(Zcl.Utils.getClusterAttribute(cluster, "coordinate1", undefined)!, 0x0012);
             expect(result).toStrictEqual(0x0012);
-            result = Zcl.Utils.processAttributeWrite(cluster.getAttribute("pathLossExponent")!, 0xff);
+            result = Zcl.Utils.processAttributeWrite(Zcl.Utils.getClusterAttribute(cluster, "pathLossExponent", undefined)!, 0xff);
             expect(result).toStrictEqual(0xff);
-            result = Zcl.Utils.processAttributeWrite(cluster.getAttribute("pathLossExponent")!, Number.NaN);
+            result = Zcl.Utils.processAttributeWrite(Zcl.Utils.getClusterAttribute(cluster, "pathLossExponent", undefined)!, Number.NaN);
             expect(result).toStrictEqual(0xffff);
         });
     });
@@ -405,39 +427,41 @@ describe("ZCL Utils", () => {
         it("basic attributes zclVersion and powerSource", () => {
             const cluster = Zcl.Utils.getCluster("genBasic");
             // max: 0xff
-            let result = Zcl.Utils.processAttributePostRead(cluster.getAttribute("zclVersion")!, 0xff);
+            let result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "zclVersion", undefined)!, 0xff);
             expect(result).toStrictEqual(0xff);
             // default: 0xff
-            result = Zcl.Utils.processAttributePostRead(cluster.getAttribute("powerSource")!, 0xff);
+            result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "powerSource", undefined)!, 0xff);
             expect(result).toStrictEqual(0xff);
-            result = Zcl.Utils.processAttributePostRead(cluster.getAttribute("zclVersion")!, 0x02);
+            result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "zclVersion", undefined)!, 0x02);
             expect(result).toStrictEqual(0x02);
-            result = Zcl.Utils.processAttributePostRead(cluster.getAttribute("powerSource")!, 0x03);
+            result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "powerSource", undefined)!, 0x03);
             expect(result).toStrictEqual(0x03);
         });
 
         it("device temperature config attribute currentTemperature", () => {
             const cluster = Zcl.Utils.getCluster("genDeviceTempCfg");
-            let result = Zcl.Utils.processAttributePostRead(cluster.getAttribute("currentTemperature")!, -32768);
+            let result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "currentTemperature", undefined)!, -32768);
             expect(Number.isNaN(result)).toStrictEqual(true);
-            result = Zcl.Utils.processAttributePostRead(cluster.getAttribute("currentTemperature")!, 200);
+            result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "currentTemperature", undefined)!, 200);
             expect(result).toStrictEqual(200);
-            result = Zcl.Utils.processAttributePostRead(cluster.getAttribute("currentTemperature")!, -200);
+            result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "currentTemperature", undefined)!, -200);
             expect(result).toStrictEqual(-200);
-            expect(() => Zcl.Utils.processAttributePostRead(cluster.getAttribute("currentTemperature")!, 201)).toThrow(/requires max/i);
+            expect(() => Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "currentTemperature", undefined)!, 201)).toThrow(
+                /requires max/i,
+            );
         });
 
         it("level control for lighting attributes currentLevel and options", () => {
             const cluster = Zcl.Utils.getCluster("genLevelCtrl");
-            let result = Zcl.Utils.processAttributePostRead(cluster.getAttribute("currentLevel")!, 0xff);
+            let result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "currentLevel", undefined)!, 0xff);
             expect(Number.isNaN(result)).toStrictEqual(false); // technically should be true for genLevelCtrlForLighting but handling left to ZHC
-            result = Zcl.Utils.processAttributePostRead(cluster.getAttribute("currentLevel")!, 0xfe);
+            result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "currentLevel", undefined)!, 0xfe);
             expect(result).toStrictEqual(0xfe);
-            result = Zcl.Utils.processAttributePostRead(cluster.getAttribute("currentLevel")!, 200);
+            result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "currentLevel", undefined)!, 200);
             expect(result).toStrictEqual(200);
-            result = Zcl.Utils.processAttributePostRead(cluster.getAttribute("options")!, 0x00);
+            result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "options", undefined)!, 0x00);
             expect(result).toStrictEqual(0x00);
-            result = Zcl.Utils.processAttributePostRead(cluster.getAttribute("options")!, 0xff);
+            result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "options", undefined)!, 0xff);
             expect(result).toStrictEqual(0xff);
         });
     });
@@ -453,7 +477,7 @@ describe("ZCL Utils", () => {
 
         it("rssi location cmd setAbsolute parameters coordinate1 and pathLossExponent", () => {
             const cluster = Zcl.Utils.getCluster("genRssiLocation");
-            const cmd = cluster.getCommand("setAbsolute")!;
+            const cmd = Zcl.Utils.getClusterCommand(cluster, "setAbsolute")!;
             const paramCoordinate1 = cmd.parameters.find((p) => p.name === "coordinate1")!;
             const paramPathLossExponent = cmd.parameters.find((p) => p.name === "pathLossExponent")!;
             let result = Zcl.Utils.processParameterWrite(paramCoordinate1, -0x8000);
@@ -517,7 +541,7 @@ describe("ZCL Utils", () => {
 
         it("rssi location cmd rsp locationDataNotification parameters coordinate1 and pathLossExponent", () => {
             const cluster = Zcl.Utils.getCluster("genRssiLocation");
-            const cmd = cluster.getCommandResponse("locationDataNotification")!;
+            const cmd = Zcl.Utils.getClusterCommandResponse(cluster, "locationDataNotification")!;
             const paramCoordinate1 = cmd.parameters.find((p) => p.name === "coordinate1")!;
             const paramPathLossExponent = cmd.parameters.find((p) => p.name === "pathLossExponent")!;
             let result = Zcl.Utils.processParameterRead(paramCoordinate1, -0x8000);

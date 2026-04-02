@@ -1,72 +1,10 @@
 import {Clusters} from "./definition/cluster";
 import {ZCL_TYPE_INVALID_BY_TYPE} from "./definition/datatypes";
-import {DataType, DataTypeClass} from "./definition/enums";
+import {DataType} from "./definition/enums";
 import {Foundation, type FoundationCommandName, type FoundationDefinition} from "./definition/foundation";
-import type {Attribute, Cluster, ClusterDefinition, ClusterName, Command, CustomClusters, Parameter} from "./definition/tstype";
-
-const DATA_TYPE_CLASS_DISCRETE = [
-    DataType.DATA8,
-    DataType.DATA16,
-    DataType.DATA24,
-    DataType.DATA32,
-    DataType.DATA40,
-    DataType.DATA48,
-    DataType.DATA56,
-    DataType.DATA64,
-    DataType.BOOLEAN,
-    DataType.BITMAP8,
-    DataType.BITMAP16,
-    DataType.BITMAP24,
-    DataType.BITMAP32,
-    DataType.BITMAP40,
-    DataType.BITMAP48,
-    DataType.BITMAP56,
-    DataType.BITMAP64,
-    DataType.ENUM8,
-    DataType.ENUM16,
-    DataType.OCTET_STR,
-    DataType.CHAR_STR,
-    DataType.LONG_OCTET_STR,
-    DataType.LONG_CHAR_STR,
-    DataType.ARRAY,
-    DataType.STRUCT,
-    DataType.SET,
-    DataType.BAG,
-    DataType.CLUSTER_ID,
-    DataType.ATTR_ID,
-    DataType.BAC_OID,
-    DataType.IEEE_ADDR,
-    DataType.SEC_KEY,
-];
-const DATA_TYPE_CLASS_ANALOG = [
-    DataType.UINT8,
-    DataType.UINT16,
-    DataType.UINT24,
-    DataType.UINT32,
-    DataType.UINT40,
-    DataType.UINT48,
-    DataType.UINT56,
-    DataType.INT8,
-    DataType.INT16,
-    DataType.INT24,
-    DataType.INT32,
-    DataType.INT40,
-    DataType.INT48,
-    DataType.INT56,
-    DataType.SEMI_PREC,
-    DataType.SINGLE_PREC,
-    DataType.DOUBLE_PREC,
-    DataType.TOD,
-    DataType.DATE,
-    DataType.UTC,
-];
-
-const FOUNDATION_DISCOVER_RSP_IDS = [
-    Foundation.discoverRsp.ID,
-    Foundation.discoverCommandsRsp.ID,
-    Foundation.discoverCommandsGenRsp.ID,
-    Foundation.discoverExtRsp.ID,
-];
+import {Status} from "./definition/status";
+import type {Attribute, Cluster, ClusterName, Command, CustomClusters, Parameter} from "./definition/tstype";
+import {ZclStatusError} from "./zclStatusError";
 
 /** Runtime fast lookup */
 const ZCL_CLUSTERS_ID_TO_NAMES = (() => {
@@ -81,227 +19,166 @@ const ZCL_CLUSTERS_ID_TO_NAMES = (() => {
     return map;
 })();
 
-export function getDataTypeClass(dataType: DataType): DataTypeClass {
-    if (DATA_TYPE_CLASS_DISCRETE.includes(dataType)) {
-        return DataTypeClass.DISCRETE;
-    }
-
-    if (DATA_TYPE_CLASS_ANALOG.includes(dataType)) {
-        return DataTypeClass.ANALOG;
-    }
-
-    throw new Error(`Don't know value type for '${DataType[dataType]}'`);
-}
-
-function hasCustomClusters(customClusters: CustomClusters): boolean {
-    // XXX: was there a good reason to not set the parameter `customClusters` optional? it would allow simple undefined check
-    // below is twice faster than checking `Object.keys(customClusters).length`
-    for (const _k in customClusters) return true;
-    return false;
-}
-
-function findClusterNameByID(
-    id: number,
-    manufacturerCode: number | undefined,
-    clusters: typeof Clusters | CustomClusters,
-    zcl: boolean,
-): [name: string | undefined, partialMatch: boolean] {
-    let name: string | undefined;
-    // if manufacturer code is given, consider partial match if didn't match against manufacturer code
-    let partialMatch = Boolean(manufacturerCode);
-
-    if (zcl) {
-        const zclName = ZCL_CLUSTERS_ID_TO_NAMES.get(id);
-
-        if (zclName) {
-            const cluster = clusters[zclName];
-
-            // priority on first match when matching only ID
-            if (name === undefined) {
-                name = zclName;
-            }
-
-            if (manufacturerCode && cluster.manufacturerCode === manufacturerCode) {
-                name = zclName;
-                partialMatch = false;
-            } else if (!cluster.manufacturerCode) {
-                name = zclName;
-            }
-        }
-    } else {
-        for (const clusterName in clusters) {
-            const cluster = clusters[clusterName as ClusterName];
-
-            if (cluster.ID === id) {
-                // priority on first match when matching only ID
-                if (name === undefined) {
-                    name = clusterName;
-                }
-
-                if (manufacturerCode && cluster.manufacturerCode === manufacturerCode) {
-                    name = clusterName;
-                    partialMatch = false;
-                    break;
-                }
-
-                if (!cluster.manufacturerCode) {
-                    name = clusterName;
-                    break;
-                }
-            }
-        }
-    }
-
-    return [name, partialMatch];
-}
-
-function getClusterDefinition(
-    key: string | number,
-    manufacturerCode: number | undefined,
-    customClusters: CustomClusters,
-): {name: string; cluster: ClusterDefinition} {
-    let name: string | undefined;
-
-    if (typeof key === "number") {
-        let partialMatch: boolean;
-
-        // custom clusters have priority over Zcl clusters, except in case of better match (see below)
-        [name, partialMatch] = findClusterNameByID(key, manufacturerCode, customClusters, false);
-
-        if (!name) {
-            [name, partialMatch] = findClusterNameByID(key, manufacturerCode, Clusters, true);
-        } else if (partialMatch) {
-            let zclName: string | undefined;
-            [zclName, partialMatch] = findClusterNameByID(key, manufacturerCode, Clusters, true);
-
-            // Zcl clusters contain a better match, use that one
-            if (zclName !== undefined && !partialMatch) {
-                name = zclName;
-            }
-        }
-    } else {
-        name = key;
-    }
-
-    let cluster =
-        name !== undefined && hasCustomClusters(customClusters)
-            ? {
-                  ...Clusters[name as ClusterName],
-                  ...customClusters[name], // should override Zcl clusters
-              }
-            : Clusters[name as ClusterName];
-
-    if (!cluster || cluster.ID === undefined) {
-        if (typeof key === "number") {
-            name = key.toString();
-            cluster = {attributes: {}, commands: {}, commandsResponse: {}, manufacturerCode: undefined, ID: key};
-        } else {
-            name = undefined;
-        }
-    }
-
-    if (!name) {
-        throw new Error(`Cluster with name '${key}' does not exist`);
-    }
-
-    return {name, cluster};
-}
-
-function cloneClusterEntriesWithName<T extends Record<string, unknown>>(entries: Record<string, T>): Record<string, {name: string} & T> {
-    const clone: Record<string, {name: string} & T> = {};
-
-    for (const key in entries) {
-        clone[key] = {...entries[key], name: key};
-    }
-
-    return clone;
-}
-
-function createCluster(name: string, cluster: ClusterDefinition, manufacturerCode?: number): Cluster {
-    const attributes: Record<string, Attribute> = cloneClusterEntriesWithName(cluster.attributes);
-    const commands: Record<string, Command> = cloneClusterEntriesWithName(cluster.commands);
-    const commandsResponse: Record<string, Command> = cloneClusterEntriesWithName(cluster.commandsResponse);
-
-    const getAttribute = (key: number | string): Attribute | undefined => {
-        if (typeof key === "number") {
-            let partialMatchAttr: Attribute | undefined;
-
-            for (const attrKey in attributes) {
-                const attr = attributes[attrKey];
-
-                if (attr.ID === key) {
-                    if (manufacturerCode && attr.manufacturerCode === manufacturerCode) {
-                        return attr;
-                    }
-
-                    if (attr.manufacturerCode === undefined) {
-                        partialMatchAttr = attr;
-                    }
-                }
-            }
-
-            return partialMatchAttr;
-        }
-
-        return attributes[key];
-    };
-
-    const getCommand = (key: number | string): Command => {
-        if (typeof key === "number") {
-            for (const cmdKey in commands) {
-                const cmd = commands[cmdKey];
-
-                if (cmd.ID === key) {
-                    return cmd;
-                }
-            }
-        } else {
-            const cmd = commands[key];
-
-            if (cmd) {
-                return cmd;
-            }
-        }
-
-        throw new Error(`Cluster '${name}' has no command '${key}'`);
-    };
-
-    const getCommandResponse = (key: number | string): Command => {
-        if (typeof key === "number") {
-            for (const cmdKey in commandsResponse) {
-                const cmd = commandsResponse[cmdKey];
-
-                if (cmd.ID === key) {
-                    return cmd;
-                }
-            }
-        } else {
-            const cmd = commandsResponse[key];
-
-            if (cmd) {
-                return cmd;
-            }
-        }
-
-        throw new Error(`Cluster '${name}' has no command response '${key}'`);
-    };
-
-    return {
-        ID: cluster.ID,
-        attributes,
-        manufacturerCode: cluster.manufacturerCode,
-        name,
-        commands,
-        commandsResponse,
-        getAttribute,
-        getCommand,
-        getCommandResponse,
-    };
+export function isAnalogDataType(dataType: DataType): boolean {
+    return (
+        dataType === DataType.UINT8 ||
+        dataType === DataType.UINT16 ||
+        dataType === DataType.UINT24 ||
+        dataType === DataType.UINT32 ||
+        dataType === DataType.UINT40 ||
+        dataType === DataType.UINT48 ||
+        dataType === DataType.UINT56 ||
+        dataType === DataType.INT8 ||
+        dataType === DataType.INT16 ||
+        dataType === DataType.INT24 ||
+        dataType === DataType.INT32 ||
+        dataType === DataType.INT40 ||
+        dataType === DataType.INT48 ||
+        dataType === DataType.INT56 ||
+        dataType === DataType.SEMI_PREC ||
+        dataType === DataType.SINGLE_PREC ||
+        dataType === DataType.DOUBLE_PREC ||
+        dataType === DataType.TOD ||
+        dataType === DataType.DATE ||
+        dataType === DataType.UTC
+    );
 }
 
 export function getCluster(key: string | number, manufacturerCode: number | undefined = undefined, customClusters: CustomClusters = {}): Cluster {
-    const {name, cluster} = getClusterDefinition(key, manufacturerCode, customClusters);
-    return createCluster(name, cluster, manufacturerCode);
+    let cluster: Cluster | undefined;
+
+    if (typeof key === "number") {
+        // custom clusters have priority over Zcl clusters, except in case of better match (see below)
+        for (const clusterName in customClusters) {
+            const foundCluster = customClusters[clusterName as ClusterName];
+
+            if (foundCluster.ID === key) {
+                // priority on first match when matching only ID
+                if (cluster === undefined) {
+                    cluster = foundCluster;
+                }
+
+                if (manufacturerCode && foundCluster.manufacturerCode === manufacturerCode) {
+                    cluster = foundCluster;
+                    break;
+                }
+
+                if (!foundCluster.manufacturerCode) {
+                    cluster = foundCluster;
+                    break;
+                }
+            }
+        }
+
+        if (!cluster) {
+            const zclName = ZCL_CLUSTERS_ID_TO_NAMES.get(key);
+
+            if (zclName) {
+                const foundCluster = Clusters[zclName];
+
+                // TODO: can remove all below once all manuf-specific moved to ZHC
+
+                // priority on first match when matching only ID
+                if (cluster === undefined) {
+                    cluster = foundCluster;
+                }
+
+                if (manufacturerCode && foundCluster.manufacturerCode === manufacturerCode) {
+                    cluster = foundCluster;
+                } else if (foundCluster.manufacturerCode === undefined) {
+                    cluster = foundCluster;
+                }
+            }
+        }
+
+        // TODO: cluster.ID can't be undefined?
+        if (!cluster || cluster.ID === undefined) {
+            cluster = {name: `${key}`, ID: key, attributes: {}, commands: {}, commandsResponse: {}};
+            // XXX: align behavior with string key?
+            // throw new ZclStatusError(Status.UNSUPPORTED_CLUSTER, `${key}`);
+        }
+    } else {
+        cluster = key in customClusters ? customClusters[key] : Clusters[key as ClusterName];
+
+        // TODO: cluster.ID can't be undefined?
+        if (!cluster || cluster.ID === undefined) {
+            throw new ZclStatusError(Status.UNSUPPORTED_CLUSTER, key);
+        }
+    }
+
+    return cluster;
+}
+
+export function getClusterAttribute(cluster: Cluster, key: number | string, manufacturerCode: number | undefined): Attribute | undefined {
+    const attributes = cluster.attributes;
+
+    if (typeof key === "number") {
+        let partialMatchAttr: Attribute | undefined;
+
+        for (const attrKey in attributes) {
+            const attr = attributes[attrKey];
+
+            if (attr.ID === key) {
+                if (manufacturerCode !== undefined && attr.manufacturerCode === manufacturerCode) {
+                    return attr;
+                }
+
+                if (attr.manufacturerCode === undefined) {
+                    partialMatchAttr = attr;
+                }
+            }
+        }
+
+        return partialMatchAttr;
+    }
+
+    return attributes[key];
+    // XXX: align behavior with cmds?
+    // throw new ZclStatusError(Status.UNSUPPORTED_ATTRIBUTE, `${cluster.name}:${key}`);
+}
+
+export function getClusterCommand(cluster: Cluster, key: number | string): Command {
+    const commands = cluster.commands;
+
+    if (typeof key === "number") {
+        for (const cmdKey in commands) {
+            const cmd = commands[cmdKey];
+
+            if (cmd.ID === key) {
+                return cmd;
+            }
+        }
+    } else {
+        const cmd = commands[key];
+
+        if (cmd) {
+            return cmd;
+        }
+    }
+
+    throw new ZclStatusError(Status.UNSUP_COMMAND, `${cluster.name}:${key}`);
+}
+
+export function getClusterCommandResponse(cluster: Cluster, key: number | string): Command {
+    const commandResponses = cluster.commandsResponse;
+
+    if (typeof key === "number") {
+        for (const cmdKey in commandResponses) {
+            const cmd = commandResponses[cmdKey];
+
+            if (cmd.ID === key) {
+                return cmd;
+            }
+        }
+    } else {
+        const cmd = commandResponses[key];
+
+        if (cmd) {
+            return cmd;
+        }
+    }
+
+    throw new ZclStatusError(Status.UNSUP_COMMAND, `response ${cluster.name}:${key}`);
 }
 
 function getGlobalCommandNameById(id: number): FoundationCommandName {
@@ -311,28 +188,18 @@ function getGlobalCommandNameById(id: number): FoundationCommandName {
         }
     }
 
-    throw new Error(`Global command with id '${id}' does not exist.`);
+    throw new ZclStatusError(Status.UNSUP_COMMAND, `foundation:${id}`);
 }
 
-export function getGlobalCommand(key: number | string): Command {
+export function getGlobalCommand(key: number | string): FoundationDefinition {
     const name = typeof key === "number" ? getGlobalCommandNameById(key) : (key as FoundationCommandName);
     const command = Foundation[name];
 
     if (!command) {
-        throw new Error(`Global command with key '${key}' does not exist`);
+        throw new ZclStatusError(Status.UNSUP_COMMAND, `foundation:${key}`);
     }
 
-    const result: Command = {
-        ID: command.ID,
-        name,
-        parameters: command.parameters,
-    };
-
-    if (command.response !== undefined) {
-        result.response = command.response;
-    }
-
-    return result;
+    return command;
 }
 
 export function isClusterName(name: string): name is ClusterName {
@@ -348,11 +215,17 @@ export function getFoundationCommand(id: number): FoundationDefinition {
         }
     }
 
-    throw new Error(`Foundation command '${id}' does not exist.`);
+    throw new ZclStatusError(Status.UNSUP_COMMAND, `foundation:${id}`);
 }
 
-export function isFoundationDiscoverRsp(id: number): boolean {
-    return FOUNDATION_DISCOVER_RSP_IDS.includes(id);
+export function getFoundationCommandByName(name: string): FoundationDefinition {
+    const command = Foundation[name as FoundationCommandName];
+
+    if (command === undefined) {
+        throw new ZclStatusError(Status.UNSUP_COMMAND, `foundation:${name}`);
+    }
+
+    return command;
 }
 
 /** Check if value is equal to either min, max, minRef or maxRef */
@@ -366,37 +239,37 @@ function isMinOrMax<T>(entry: Attribute | Parameter, value: T): boolean {
 
 function processRestrictions<T>(entry: Attribute | Parameter, value: T): void {
     if (entry.min !== undefined && (value as number) < entry.min) {
-        throw new Error(`${entry.name} requires min of ${entry.min}`);
+        throw new ZclStatusError(Status.INVALID_VALUE, `${entry.name} requires min of ${entry.min}`);
     }
 
     if (entry.minExcl !== undefined && (value as number) <= entry.minExcl) {
-        throw new Error(`${entry.name} requires min exclusive of ${entry.minExcl}`);
+        throw new ZclStatusError(Status.INVALID_VALUE, `${entry.name} requires min exclusive of ${entry.minExcl}`);
     }
 
     if (entry.max !== undefined && (value as number) > entry.max) {
-        throw new Error(`${entry.name} requires max of ${entry.max}`);
+        throw new ZclStatusError(Status.INVALID_VALUE, `${entry.name} requires max of ${entry.max}`);
     }
 
     if (entry.maxExcl !== undefined && (value as number) >= entry.maxExcl) {
-        throw new Error(`${entry.name} requires max exclusive of ${entry.maxExcl}`);
+        throw new ZclStatusError(Status.INVALID_VALUE, `${entry.name} requires max exclusive of ${entry.maxExcl}`);
     }
 
     if (entry.length !== undefined && (value as string | unknown[] | Buffer).length !== entry.length) {
-        throw new Error(`${entry.name} requires length of ${entry.length}`);
+        throw new ZclStatusError(Status.INVALID_VALUE, `${entry.name} requires length of ${entry.length}`);
     }
 
     if (entry.minLen !== undefined && (value as string | unknown[] | Buffer).length < entry.minLen) {
-        throw new Error(`${entry.name} requires min length of ${entry.minLen}`);
+        throw new ZclStatusError(Status.INVALID_VALUE, `${entry.name} requires min length of ${entry.minLen}`);
     }
 
     if (entry.maxLen !== undefined && (value as string | unknown[] | Buffer).length > entry.maxLen) {
-        throw new Error(`${entry.name} requires max length of ${entry.maxLen}`);
+        throw new ZclStatusError(Status.INVALID_VALUE, `${entry.name} requires max length of ${entry.maxLen}`);
     }
 }
 
 export function processAttributeWrite<T>(attribute: Attribute, value: T): T {
     if (attribute.write !== true) {
-        throw new Error(`Attribute ${attribute.name} (${attribute.ID}) is not writable`);
+        throw new ZclStatusError(Status.NOT_AUTHORIZED, `${attribute.name} (${attribute.ID}) is not writable`);
     }
 
     if (value == null) {
@@ -413,7 +286,7 @@ export function processAttributeWrite<T>(attribute: Attribute, value: T): T {
             const nonValue = ZCL_TYPE_INVALID_BY_TYPE[attribute.type];
 
             if (nonValue === undefined) {
-                throw new Error(`Attribute ${attribute.name} (${attribute.ID}) does not have a default nor a non-value`);
+                throw new ZclStatusError(Status.INVALID_FIELD, `${attribute.name} (${attribute.ID}) does not have a default nor a non-value`);
             }
 
             return nonValue as T;
@@ -429,7 +302,7 @@ export function processAttributeWrite<T>(attribute: Attribute, value: T): T {
 
 export function processAttributePreRead(attribute: Attribute): void {
     if (attribute.read === false) {
-        throw new Error(`Attribute ${attribute.name} (${attribute.ID}) is not readable`);
+        throw new ZclStatusError(Status.NOT_AUTHORIZED, `${attribute.name} (${attribute.ID}) is not readable`);
     }
 }
 
@@ -470,7 +343,7 @@ export function processParameterWrite<T>(parameter: Parameter, value: T): T {
         const nonValue = ZCL_TYPE_INVALID_BY_TYPE[parameter.type];
 
         if (nonValue === undefined) {
-            throw new Error(`Parameter ${parameter.name} does not have a non-value`);
+            throw new ZclStatusError(Status.INVALID_FIELD, `${parameter.name} does not have a non-value`);
         }
 
         return nonValue as T;

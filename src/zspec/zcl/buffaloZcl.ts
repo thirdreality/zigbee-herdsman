@@ -24,6 +24,7 @@ import type {
     ZoneInfo,
 } from "./definition/tstype";
 import * as Utils from "./utils";
+import {getClusterAttribute} from "./utils";
 
 const NS = "zh:zcl:buffalo";
 
@@ -496,7 +497,7 @@ export class BuffaloZcl extends Buffalo {
                 const attributeID = this.readUInt16();
                 const type = this.readUInt8();
                 /* v8 ignore next */
-                let attribute: string | undefined | number = cluster.getAttribute(attributeID)?.name;
+                let attribute: string | undefined | number = getClusterAttribute(cluster, attributeID, frame.manufacturerCode)?.name;
 
                 // number type is only used when going into this if
                 if (!attribute) {
@@ -518,7 +519,7 @@ export class BuffaloZcl extends Buffalo {
         return {raw: this.readBuffer(options.payload.payloadSize)};
     }
 
-    private writeStructuredSelector(value: StructuredSelector): void {
+    public writeStructuredSelector(value: StructuredSelector): void {
         if (value != null) {
             const indexes = value.indexes || [];
             const indicatorType = value.indicatorType || StructuredIndicatorType.Whole;
@@ -532,7 +533,7 @@ export class BuffaloZcl extends Buffalo {
         }
     }
 
-    private readStructuredSelector(): StructuredSelector {
+    public readStructuredSelector(): StructuredSelector {
         /** [0-15] range */
         const indicator = this.readUInt8();
 

@@ -137,7 +137,7 @@ const GLOBAL_FRAME = Zcl.Frame.create(
     GLOBAL_HEADER.frameControl.reservedBits,
 );
 const GLOBAL_FRAME_BUFFER = Buffer.concat([GLOBAL_HEADER_BUFFER, Buffer.from(uint16To8Array(256))]);
-const GLOBAL_FRAME_STRING = `{"header":{"frameControl":{"reservedBits":0,"frameType":0,"direction":0,"disableDefaultResponse":false,"manufacturerSpecific":false},"transactionSequenceNumber":123,"commandIdentifier":0},"payload":[{"attrId":256}],"command":{"ID":0,"name":"read","parameters":[{"name":"attrId","type":9}],"response":1}}`;
+const GLOBAL_FRAME_STRING = `{"header":{"frameControl":{"reservedBits":0,"frameType":0,"direction":0,"disableDefaultResponse":false,"manufacturerSpecific":false},"transactionSequenceNumber":123,"commandIdentifier":0},"payload":[{"attrId":256}],"command":{"name":"read","ID":0,"response":1}}`;
 
 /** Frame of Global type with BigInt */
 const GLOBAL_FRAME_BIG_INT = Zcl.Frame.create(
@@ -158,7 +158,7 @@ const GLOBAL_FRAME_BIG_INT_BUFFER = Buffer.concat([
     Buffer.from([Zcl.DataType.UINT56]),
     Buffer.from(uint56To8Array(200n)),
 ]);
-const GLOBAL_FRAME_BIG_INT_STRING = `{"header":{"frameControl":{"reservedBits":0,"frameType":0,"direction":0,"disableDefaultResponse":false,"manufacturerSpecific":false},"transactionSequenceNumber":123,"commandIdentifier":10},"payload":[{"attrId":0,"dataType":38,"attrData":"200"}],"command":{"ID":10,"name":"report","parameters":[{"name":"attrId","type":9},{"name":"dataType","type":8},{"name":"attrData","type":1000}]}}`;
+const GLOBAL_FRAME_BIG_INT_STRING = `{"header":{"frameControl":{"reservedBits":0,"frameType":0,"direction":0,"disableDefaultResponse":false,"manufacturerSpecific":false},"transactionSequenceNumber":123,"commandIdentifier":10},"payload":[{"attrId":0,"dataType":38,"attrData":"200"}],"command":{"name":"report","ID":10}}`;
 
 /** Frame of Global type and response command */
 const GLOBAL_RSP_FRAME = Zcl.Frame.create(
@@ -177,23 +177,7 @@ const GLOBAL_RSP_FRAME_BUFFER = Buffer.concat([
     GLOBAL_RSP_HEADER_BUFFER,
     Buffer.from([...uint16To8Array(256), Zcl.Status.SUCCESS, Zcl.DataType.ENUM8, 127]),
 ]);
-const GLOBAL_RSP_FRAME_STRING = `{"header":{"frameControl":{"reservedBits":0,"frameType":0,"direction":1,"disableDefaultResponse":false,"manufacturerSpecific":false},"transactionSequenceNumber":78,"commandIdentifier":1},"payload":[{"attrId":256,"status":0,"dataType":48,"attrData":127}],"command":{"ID":1,"name":"readRsp","parameters":[{"name":"attrId","type":9},{"name":"status","type":8},{"name":"dataType","type":8,"conditions":[{"type":"fieldEquals","field":"status","value":0}]},{"name":"attrData","type":1000,"conditions":[{"type":"fieldEquals","field":"status","value":0}]}]}}`;
-
-/** Frame of Global type with no payload */
-const GLOBAL_FRAME_NO_PAYLOAD = Zcl.Frame.create(
-    GLOBAL_HEADER.frameControl.frameType,
-    GLOBAL_HEADER.frameControl.direction,
-    GLOBAL_HEADER.frameControl.disableDefaultResponse,
-    GLOBAL_HEADER.manufacturerCode,
-    GLOBAL_HEADER.transactionSequenceNumber,
-    GLOBAL_HEADER.commandIdentifier,
-    Zcl.Clusters.genBasic.ID,
-    [] /*payload*/,
-    {} /*custom clusters*/,
-    GLOBAL_HEADER.frameControl.reservedBits,
-);
-const GLOBAL_FRAME_NO_PAYLOAD_BUFFER = Buffer.concat([GLOBAL_HEADER_BUFFER]);
-const GLOBAL_FRAME_NO_PAYLOAD_STRING = `{"header":{"frameControl":{"reservedBits":0,"frameType":0,"direction":0,"disableDefaultResponse":false,"manufacturerSpecific":false},"transactionSequenceNumber":123,"commandIdentifier":0},"payload":[],"command":{"ID":0,"name":"read","parameters":[{"name":"attrId","type":9}],"response":1}}`;
+const GLOBAL_RSP_FRAME_STRING = `{"header":{"frameControl":{"reservedBits":0,"frameType":0,"direction":1,"disableDefaultResponse":false,"manufacturerSpecific":false},"transactionSequenceNumber":78,"commandIdentifier":1},"payload":[{"attrId":256,"status":0,"dataType":48,"attrData":127}],"command":{"name":"readRsp","ID":1}}`;
 
 /** Frame of Global type with condition-based parameters */
 const GLOBAL_CONDITION_FRAME = Zcl.Frame.create(
@@ -212,7 +196,7 @@ const GLOBAL_CONDITION_FRAME_BUFFER = Buffer.concat([
     GLOBAL_CONDITION_HEADER_BUFFER,
     Buffer.from([Zcl.Direction.SERVER_TO_CLIENT, ...uint16To8Array(256), ...uint16To8Array(10000)]),
 ]);
-const GLOBAL_CONDITION_FRAME_STRING = `{"header":{"frameControl":{"reservedBits":0,"frameType":0,"direction":1,"disableDefaultResponse":false,"manufacturerSpecific":false},"transactionSequenceNumber":78,"commandIdentifier":6},"payload":[{"direction":1,"attrId":256,"timeout":10000}],"command":{"ID":6,"name":"configReport","parameters":[{"name":"direction","type":8},{"name":"attrId","type":9},{"name":"dataType","type":8,"conditions":[{"type":"fieldEquals","field":"direction","value":0}]},{"name":"minRepIntval","type":9,"conditions":[{"type":"fieldEquals","field":"direction","value":0}]},{"name":"maxRepIntval","type":9,"conditions":[{"type":"fieldEquals","field":"direction","value":0}]},{"name":"repChange","type":1000,"conditions":[{"type":"fieldEquals","field":"direction","value":0},{"type":"dataTypeValueTypeEquals","value":"ANALOG"}]},{"name":"timeout","type":9,"conditions":[{"type":"fieldEquals","field":"direction","value":1}]}],"response":7}}`;
+const GLOBAL_CONDITION_FRAME_STRING = `{"header":{"frameControl":{"reservedBits":0,"frameType":0,"direction":1,"disableDefaultResponse":false,"manufacturerSpecific":false},"transactionSequenceNumber":78,"commandIdentifier":6},"payload":[{"direction":1,"attrId":256,"timeout":10000}],"command":{"name":"configReport","ID":6,"response":7}}`;
 
 /** Frame of Specific type */
 const SPECIFIC_FRAME = Zcl.Frame.create(
@@ -228,7 +212,7 @@ const SPECIFIC_FRAME = Zcl.Frame.create(
     SPECIFIC_HEADER.frameControl.reservedBits,
 );
 const SPECIFIC_FRAME_BUFFER = Buffer.concat([SPECIFIC_HEADER_BUFFER]);
-const SPECIFIC_FRAME_STRING = `{"header":{"frameControl":{"reservedBits":0,"frameType":1,"direction":0,"disableDefaultResponse":false,"manufacturerSpecific":false},"transactionSequenceNumber":44,"commandIdentifier":2},"payload":{},"command":{"ID":2,"parameters":[],"name":"getAlarm"}}`;
+const SPECIFIC_FRAME_STRING = `{"header":{"frameControl":{"reservedBits":0,"frameType":1,"direction":0,"disableDefaultResponse":false,"manufacturerSpecific":false},"transactionSequenceNumber":44,"commandIdentifier":2},"payload":{},"command":{"name":"getAlarm","ID":2,"parameters":[]}}`;
 
 /** Frame of Specific type and response command */
 const SPECIFIC_RSP_FRAME = Zcl.Frame.create(
@@ -244,7 +228,7 @@ const SPECIFIC_RSP_FRAME = Zcl.Frame.create(
     SPECIFIC_RSP_HEADER.frameControl.reservedBits,
 );
 const SPECIFIC_RSP_FRAME_BUFFER = Buffer.concat([SPECIFIC_RSP_HEADER_BUFFER, Buffer.from([246, ...uint16To8Array(3456)])]);
-const SPECIFIC_RSP_FRAME_STRING = `{"header":{"frameControl":{"reservedBits":0,"frameType":1,"direction":1,"disableDefaultResponse":false,"manufacturerSpecific":false},"transactionSequenceNumber":53,"commandIdentifier":0},"payload":{"alarmcode":246,"clusterid":3456},"command":{"ID":0,"parameters":[{"name":"alarmcode","type":48},{"name":"clusterid","type":232}],"required":true,"name":"alarm"}}`;
+const SPECIFIC_RSP_FRAME_STRING = `{"header":{"frameControl":{"reservedBits":0,"frameType":1,"direction":1,"disableDefaultResponse":false,"manufacturerSpecific":false},"transactionSequenceNumber":53,"commandIdentifier":0},"payload":{"alarmcode":246,"clusterid":3456},"command":{"name":"alarm","ID":0,"parameters":[{"name":"alarmcode","type":48},{"name":"clusterid","type":232}],"required":true}}`;
 
 /** Frame of Specific type with condition-based parameters */
 const SPECIFIC_CONDITION_FRAME = Zcl.Frame.create(
@@ -260,7 +244,7 @@ const SPECIFIC_CONDITION_FRAME = Zcl.Frame.create(
     SPECIFIC_CONDITION_HEADER.frameControl.reservedBits,
 );
 const SPECIFIC_CONDITION_FRAME_BUFFER = Buffer.concat([SPECIFIC_CONDITION_HEADER_BUFFER, Buffer.from([149])]);
-const SPECIFIC_CONDITION_FRAME_STRING = `{"header":{"frameControl":{"reservedBits":0,"frameType":1,"direction":1,"disableDefaultResponse":false,"manufacturerSpecific":false},"transactionSequenceNumber":45,"commandIdentifier":2},"payload":{"status":149},"command":{"ID":2,"parameters":[{"name":"status","type":48},{"name":"manufacturerCode","type":33,"conditions":[{"type":"fieldEquals","field":"status","value":0}]},{"name":"imageType","type":33,"conditions":[{"type":"fieldEquals","field":"status","value":0}],"max":65471},{"name":"fileVersion","type":35,"conditions":[{"type":"fieldEquals","field":"status","value":0}]},{"name":"imageSize","type":35,"conditions":[{"type":"fieldEquals","field":"status","value":0}]}],"required":true,"name":"queryNextImageResponse"}}`;
+const SPECIFIC_CONDITION_FRAME_STRING = `{"header":{"frameControl":{"reservedBits":0,"frameType":1,"direction":1,"disableDefaultResponse":false,"manufacturerSpecific":false},"transactionSequenceNumber":45,"commandIdentifier":2},"payload":{"status":149},"command":{"name":"queryNextImageResponse","ID":2,"parameters":[{"name":"status","type":48},{"name":"manufacturerCode","type":33,"conditions":[{"type":"fieldEquals","field":"status","value":0}]},{"name":"imageType","type":33,"conditions":[{"type":"fieldEquals","field":"status","value":0}],"max":65471},{"name":"fileVersion","type":35,"conditions":[{"type":"fieldEquals","field":"status","value":0}]},{"name":"imageSize","type":35,"conditions":[{"type":"fieldEquals","field":"status","value":0}]}],"required":true}}`;
 
 /** Frame manufacturer-specific */
 const MANUF_SPE_FRAME = Zcl.Frame.create(
@@ -276,13 +260,60 @@ const MANUF_SPE_FRAME = Zcl.Frame.create(
     MANUF_SPE_HEADER.frameControl.reservedBits,
 );
 const MANUF_SPE_FRAME_BUFFER = Buffer.concat([MANUF_SPE_HEADER_BUFFER, Buffer.from(uint16To8Array(256))]);
-const MANUF_SPE_FRAME_STRING = `{"header":{"frameControl":{"reservedBits":0,"frameType":0,"direction":0,"disableDefaultResponse":false,"manufacturerSpecific":true},"manufacturerCode":4344,"transactionSequenceNumber":234,"commandIdentifier":0},"payload":[{"attrId":256}],"command":{"ID":0,"name":"read","parameters":[{"name":"attrId","type":9}],"response":1}}`;
+const MANUF_SPE_FRAME_STRING = `{"header":{"frameControl":{"reservedBits":0,"frameType":0,"direction":0,"disableDefaultResponse":false,"manufacturerSpecific":true},"manufacturerCode":4344,"transactionSequenceNumber":234,"commandIdentifier":0},"payload":[{"attrId":256}],"command":{"name":"read","ID":0,"response":1}}`;
+
+const LIST_HEADER = new Zcl.Header(
+    {
+        frameType: Zcl.FrameType.SPECIFIC,
+        manufacturerSpecific: false,
+        direction: Zcl.Direction.CLIENT_TO_SERVER,
+        disableDefaultResponse: false,
+        reservedBits: 0,
+    },
+    undefined,
+    43,
+    Zcl.Clusters.genGroups.commands.getMembership.ID,
+);
+const LIST_BUFFER = Buffer.from([1, 43, Zcl.Clusters.genGroups.commands.getMembership.ID, 2, 10, 0, 20, 0]);
+const LIST_FRAME = Zcl.Frame.create(
+    LIST_HEADER.frameControl.frameType,
+    LIST_HEADER.frameControl.direction,
+    LIST_HEADER.frameControl.disableDefaultResponse,
+    LIST_HEADER.manufacturerCode,
+    LIST_HEADER.transactionSequenceNumber,
+    LIST_HEADER.commandIdentifier,
+    Zcl.Clusters.genGroups.ID,
+    {groupcount: 2, grouplist: [10, 20]} /*payload*/,
+    {} /*custom clusters*/,
+    LIST_HEADER.frameControl.reservedBits,
+);
+const LIST_STRING = `{"header":{"frameControl":{"reservedBits":0,"frameType":1,"direction":0,"disableDefaultResponse":false,"manufacturerSpecific":false},"transactionSequenceNumber":43,"commandIdentifier":2},"payload":{"groupcount":2,"grouplist":[10,20]},"command":{"name":"getMembership","ID":2,"response":2,"parameters":[{"name":"groupcount","type":32},{"name":"grouplist","type":1002}],"required":true}}`;
 
 describe("ZCL Frame", () => {
     describe("Validates Parameter Condition", () => {
         it("MINIMUM_REMAINING_BUFFER_BYTES", () => {
-            expect(Zcl.Frame.conditionsValid(Zcl.Foundation.configReportRsp.parameters[1], {status: 1}, 3)).toBeTruthy();
-            expect(Zcl.Frame.conditionsValid(Zcl.Foundation.configReportRsp.parameters[1], {status: 1}, 2)).toBeFalsy();
+            expect(
+                Zcl.Frame.conditionsValid(
+                    {
+                        name: "direction",
+                        type: Zcl.DataType.DATA8,
+                        conditions: [{type: Zcl.ParameterCondition.MINIMUM_REMAINING_BUFFER_BYTES, value: 3}],
+                    },
+                    {status: 1},
+                    3,
+                ),
+            ).toBeTruthy();
+            expect(
+                Zcl.Frame.conditionsValid(
+                    {
+                        name: "direction",
+                        type: Zcl.DataType.DATA8,
+                        conditions: [{type: Zcl.ParameterCondition.MINIMUM_REMAINING_BUFFER_BYTES, value: 3}],
+                    },
+                    {status: 1},
+                    2,
+                ),
+            ).toBeFalsy();
         });
 
         it("BITMASK_SET", () => {
@@ -302,54 +333,51 @@ describe("ZCL Frame", () => {
             expect(Zcl.Frame.conditionsValid(Zcl.Clusters.greenPower.commands.notification.parameters[1], {options: 0b1010}, undefined)).toBeFalsy();
         });
 
-        it("multiple including DATA_TYPE_CLASS_EQUAL", () => {
-            expect(
-                Zcl.Frame.conditionsValid(
-                    Zcl.Foundation.configReport.parameters[5],
-                    {direction: Zcl.Direction.CLIENT_TO_SERVER, dataType: Zcl.DataType.UINT8},
-                    undefined,
-                ),
-            ).toBeTruthy();
-            expect(
-                Zcl.Frame.conditionsValid(
-                    Zcl.Foundation.configReport.parameters[5],
-                    {direction: Zcl.Direction.CLIENT_TO_SERVER, dataType: Zcl.DataType.DATA8},
-                    undefined,
-                ),
-            ).toBeFalsy();
-            expect(
-                Zcl.Frame.conditionsValid(
-                    Zcl.Foundation.configReport.parameters[5],
-                    {direction: Zcl.Direction.SERVER_TO_CLIENT, dataType: Zcl.DataType.UINT8},
-                    undefined,
-                ),
-            ).toBeFalsy();
-            expect(
-                Zcl.Frame.conditionsValid(
-                    Zcl.Foundation.configReport.parameters[5],
-                    {direction: Zcl.Direction.SERVER_TO_CLIENT, dataType: Zcl.DataType.DATA8},
-                    undefined,
-                ),
-            ).toBeFalsy();
-        });
-
         it("FIELD_EQUAL", () => {
-            expect(Zcl.Frame.conditionsValid(Zcl.Foundation.readRsp.parameters[2], {status: 0}, undefined)).toBeTruthy();
-            expect(Zcl.Frame.conditionsValid(Zcl.Foundation.readRsp.parameters[2], {status: 1}, undefined)).toBeFalsy();
-            expect(Zcl.Frame.conditionsValid(Zcl.Foundation.writeRsp.parameters[1], {status: 1}, undefined)).toBeTruthy();
-            expect(Zcl.Frame.conditionsValid(Zcl.Foundation.writeRsp.parameters[1], {status: 0}, undefined)).toBeFalsy();
             expect(
-                Zcl.Frame.conditionsValid(Zcl.Foundation.configReport.parameters[2], {direction: Zcl.Direction.CLIENT_TO_SERVER}, undefined),
+                Zcl.Frame.conditionsValid(
+                    {
+                        name: "dataType",
+                        type: Zcl.DataType.DATA8,
+                        conditions: [{type: Zcl.ParameterCondition.FIELD_EQUAL, field: "status", value: Zcl.Status.SUCCESS}],
+                    },
+                    {status: 0},
+                    undefined,
+                ),
             ).toBeTruthy();
             expect(
-                Zcl.Frame.conditionsValid(Zcl.Foundation.configReport.parameters[2], {direction: Zcl.Direction.SERVER_TO_CLIENT}, undefined),
+                Zcl.Frame.conditionsValid(
+                    {
+                        name: "dataType",
+                        type: Zcl.DataType.DATA8,
+                        conditions: [{type: Zcl.ParameterCondition.FIELD_EQUAL, field: "status", value: Zcl.Status.SUCCESS}],
+                    },
+                    {status: 1},
+                    undefined,
+                ),
             ).toBeFalsy();
             expect(
-                Zcl.Frame.conditionsValid(Zcl.Foundation.configReport.parameters[6], {direction: Zcl.Direction.SERVER_TO_CLIENT}, undefined),
+                Zcl.Frame.conditionsValid(
+                    {
+                        name: "dataType",
+                        type: Zcl.DataType.DATA8,
+                        conditions: [{type: Zcl.ParameterCondition.FIELD_EQUAL, field: "status", value: Zcl.Status.SUCCESS, reversed: true}],
+                    },
+                    {status: 0},
+                    undefined,
+                ),
+            ).toBeFalsy();
+            expect(
+                Zcl.Frame.conditionsValid(
+                    {
+                        name: "dataType",
+                        type: Zcl.DataType.DATA8,
+                        conditions: [{type: Zcl.ParameterCondition.FIELD_EQUAL, field: "status", value: Zcl.Status.SUCCESS, reversed: true}],
+                    },
+                    {status: 1},
+                    undefined,
+                ),
             ).toBeTruthy();
-            expect(
-                Zcl.Frame.conditionsValid(Zcl.Foundation.configReport.parameters[6], {direction: Zcl.Direction.CLIENT_TO_SERVER}, undefined),
-            ).toBeFalsy();
             expect(
                 Zcl.Frame.conditionsValid(Zcl.Clusters.touchlink.commandsResponse.scanResponse.parameters[13], {numberOfSubDevices: 1}, undefined),
             ).toBeTruthy();
@@ -531,11 +559,6 @@ describe("ZCL Frame", () => {
         ],
         ["global response", GLOBAL_RSP_FRAME, {string: GLOBAL_RSP_FRAME_STRING, header: GLOBAL_RSP_HEADER, written: GLOBAL_RSP_FRAME_BUFFER}],
         [
-            "global no payload",
-            GLOBAL_FRAME_NO_PAYLOAD,
-            {string: GLOBAL_FRAME_NO_PAYLOAD_STRING, header: GLOBAL_HEADER, written: GLOBAL_FRAME_NO_PAYLOAD_BUFFER},
-        ],
-        [
             "global with condition-based parameters",
             GLOBAL_CONDITION_FRAME,
             {string: GLOBAL_CONDITION_FRAME_STRING, header: GLOBAL_CONDITION_HEADER, written: GLOBAL_CONDITION_FRAME_BUFFER},
@@ -552,6 +575,7 @@ describe("ZCL Frame", () => {
             {string: SPECIFIC_CONDITION_FRAME_STRING, header: SPECIFIC_CONDITION_HEADER, written: SPECIFIC_CONDITION_FRAME_BUFFER},
         ],
         ["manufacturer-specific", MANUF_SPE_FRAME, {string: MANUF_SPE_FRAME_STRING, header: MANUF_SPE_HEADER, written: MANUF_SPE_FRAME_BUFFER}],
+        ["list", LIST_FRAME, {string: LIST_STRING, header: LIST_HEADER, written: LIST_BUFFER}],
     ])("Writes & Reads frame %s", (_name, frame, expected) => {
         expect(frame).toBeDefined();
         expect(frame.toString()).toStrictEqual(expected.string);
@@ -837,15 +861,6 @@ describe("ZCL Frame", () => {
             {
                 attrId: 65282,
                 dataType: Zcl.DataType.STRUCT,
-                numElms: 6,
-                structElms: [
-                    {elmType: Zcl.DataType.BOOLEAN, elmVal: 1},
-                    {elmType: Zcl.DataType.UINT16, elmVal: 3022},
-                    {elmType: Zcl.DataType.UINT16, elmVal: 17320},
-                    {elmType: Zcl.DataType.UINT40, elmVal: 1},
-                    {elmType: Zcl.DataType.UINT16, elmVal: 560},
-                    {elmType: Zcl.DataType.UINT8, elmVal: 86},
-                ],
                 attrData: [
                     {elmType: Zcl.DataType.BOOLEAN, elmVal: 1},
                     {elmType: Zcl.DataType.UINT16, elmVal: 3022},
@@ -939,7 +954,7 @@ describe("ZCL Frame", () => {
         expect(() => {
             Zcl.Frame.fromBuffer(Zcl.Clusters.genOta.ID, Zcl.Header.fromBuffer(b), b, {});
         }).toThrow(
-            `Cannot parse 'imageBlockRequest:maximumDataSize' (The value of "offset" is out of range. It must be >= 0 and <= 15. Received 16)`,
+            `Status 'INVALID_FIELD' genOta:imageBlockRequest:maximumDataSize (The value of "offset" is out of range. It must be >= 0 and <= 15. Received 16)`,
         );
     });
 
