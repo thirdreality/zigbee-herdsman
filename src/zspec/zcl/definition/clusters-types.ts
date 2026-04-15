@@ -2838,22 +2838,6 @@ export interface TClusters {
             intermediateSetpointsLift: Buffer;
             /** ID=0x0019 | type=OCTET_STR | write=true | default=1,0x0000 */
             intermediateSetpointsTilt: Buffer;
-            /** ID=0xf000 | type=ENUM8 | write=true | max=255 */
-            tuyaMovingState: number;
-            /** ID=0xf001 | type=ENUM8 | write=true | max=255 */
-            tuyaCalibration: number;
-            /** ID=0xf001 | type=ENUM8 | manufacturerCode=LEGRAND_GROUP(0x1021) | write=true | max=255 */
-            stepPositionLift?: number;
-            /** ID=0xf002 | type=ENUM8 | write=true | max=255 */
-            tuyaMotorReversal: number;
-            /** ID=0xf002 | type=ENUM8 | manufacturerCode=LEGRAND_GROUP(0x1021) | write=true | max=255 */
-            calibrationMode?: number;
-            /** ID=0xf003 | type=UINT16 | write=true | max=65535 */
-            moesCalibrationTime: number;
-            /** ID=0xf003 | type=ENUM8 | manufacturerCode=LEGRAND_GROUP(0x1021) | write=true | max=255 */
-            targetPositionTiltPercentage?: number;
-            /** ID=0xf004 | type=ENUM8 | manufacturerCode=LEGRAND_GROUP(0x1021) | write=true | max=255 */
-            stepPositionTilt?: number;
         };
         commands: {
             /** ID=0x00 | required=true */
@@ -3286,10 +3270,6 @@ export interface TClusters {
             coupleColorTempToLevelMin: number;
             /** ID=0x4010 | type=UINT16 | write=true | max=65279 | special=SetColorTempToPreviousValue,ffff */
             startUpColorTemperature: number;
-            /** ID=0xf000 | type=UINT8 | write=true | max=255 */
-            tuyaRgbMode: number;
-            /** ID=0xf001 | type=UINT8 | write=true | max=255 */
-            tuyaBrightness: number;
         };
         commands: {
             /** ID=0x00 */
@@ -3530,57 +3510,6 @@ export interface TClusters {
                 optionsMask?: number;
                 /** type=BITMAP8 | conditions=[{minimumRemainingBufferBytes value=1}] */
                 optionsOverride?: number;
-            };
-            /** ID=0x06 */
-            tuyaMoveToHueAndSaturationBrightness: {
-                /** type=UINT8 | max=255 */
-                hue: number;
-                /** type=UINT8 | max=255 */
-                saturation: number;
-                /** type=UINT16 | max=65535 */
-                transtime: number;
-                /** type=UINT8 | max=255 */
-                brightness: number;
-            };
-            /** ID=0xe0 */
-            tuyaSetMinimumBrightness: {
-                /** type=UINT16 | max=65535 */
-                minimum: number;
-            };
-            /** ID=0xe1 */
-            tuyaMoveToHueAndSaturationBrightness2: {
-                /** type=UINT16 | max=65535 */
-                hue: number;
-                /** type=UINT16 | max=65535 */
-                saturation: number;
-                /** type=UINT16 | max=65535 */
-                brightness: number;
-            };
-            /** ID=0xf0 */
-            tuyaRgbMode: {
-                /** type=UINT8 | max=255 */
-                enable: number;
-            };
-            /** ID=0xf9 */
-            tuyaOnStartUp: {
-                /** type=UINT16 | max=65535 */
-                mode: number;
-                /** type=LIST_UINT8 */
-                data: number[];
-            };
-            /** ID=0xfa */
-            tuyaDoNotDisturb: {
-                /** type=UINT8 | max=255 */
-                enable: number;
-            };
-            /** ID=0xfb */
-            tuyaOnOffTransitionTime: {
-                /** type=UINT8 | max=255 */
-                unknown: number;
-                /** type=BIG_ENDIAN_UINT24 */
-                onTransitionTime: number;
-                /** type=BIG_ENDIAN_UINT24 */
-                offTransitionTime: number;
             };
         };
         commandResponses: never;

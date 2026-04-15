@@ -3417,45 +3417,6 @@ export const Clusters: Readonly<Record<ClusterName, Cluster>> = {
             windowCoveringMode: {name: "windowCoveringMode", ID: 0x0017, type: DataType.BITMAP8, write: true, required: true, default: 4},
             intermediateSetpointsLift: {name: "intermediateSetpointsLift", ID: 0x0018, type: DataType.OCTET_STR, write: true, default: "1,0x0000"},
             intermediateSetpointsTilt: {name: "intermediateSetpointsTilt", ID: 0x0019, type: DataType.OCTET_STR, write: true, default: "1,0x0000"},
-            // custom
-            // XXX: doesn't exist?
-
-            tuyaMovingState: {name: "tuyaMovingState", ID: 0xf000, type: DataType.ENUM8, write: true, max: 0xff},
-            tuyaCalibration: {name: "tuyaCalibration", ID: 0xf001, type: DataType.ENUM8, write: true, max: 0xff},
-            stepPositionLift: {
-                name: "stepPositionLift",
-                ID: 0xf001,
-                type: DataType.ENUM8,
-                manufacturerCode: ManufacturerCode.LEGRAND_GROUP,
-                write: true,
-                max: 0xff,
-            },
-            tuyaMotorReversal: {name: "tuyaMotorReversal", ID: 0xf002, type: DataType.ENUM8, write: true, max: 0xff},
-            calibrationMode: {
-                name: "calibrationMode",
-                ID: 0xf002,
-                type: DataType.ENUM8,
-                manufacturerCode: ManufacturerCode.LEGRAND_GROUP,
-                write: true,
-                max: 0xff,
-            },
-            moesCalibrationTime: {name: "moesCalibrationTime", ID: 0xf003, type: DataType.UINT16, write: true, max: 0xffff},
-            targetPositionTiltPercentage: {
-                name: "targetPositionTiltPercentage",
-                ID: 0xf003,
-                type: DataType.ENUM8,
-                manufacturerCode: ManufacturerCode.LEGRAND_GROUP,
-                write: true,
-                max: 0xff,
-            },
-            stepPositionTilt: {
-                name: "stepPositionTilt",
-                ID: 0xf004,
-                type: DataType.ENUM8,
-                manufacturerCode: ManufacturerCode.LEGRAND_GROUP,
-                write: true,
-                max: 0xff,
-            },
         },
         commands: {
             upOpen: {name: "upOpen", ID: 0x00, parameters: [], required: true},
@@ -3874,9 +3835,6 @@ export const Clusters: Readonly<Record<ClusterName, Cluster>> = {
                 max: 0xfeff,
                 special: [["SetColorTempToPreviousValue", "ffff"]],
             },
-            // custom
-            tuyaRgbMode: {name: "tuyaRgbMode", ID: 0xf000, type: DataType.UINT8, write: true, max: 0xff},
-            tuyaBrightness: {name: "tuyaBrightness", ID: 0xf001, type: DataType.UINT8, write: true, max: 0xff},
         },
         commands: {
             moveToHue: {
@@ -4197,50 +4155,6 @@ export const Clusters: Readonly<Record<ClusterName, Cluster>> = {
                     },
                 ],
                 // required: true only if bit 0 of colorCapabilities attribute is 1
-            },
-            // custom
-            tuyaMoveToHueAndSaturationBrightness: {
-                name: "tuyaMoveToHueAndSaturationBrightness",
-                ID: 0x06,
-                parameters: [
-                    {name: "hue", type: DataType.UINT8, max: 0xff},
-                    {name: "saturation", type: DataType.UINT8, max: 0xff},
-                    {name: "transtime", type: DataType.UINT16, max: 0xffff},
-                    {name: "brightness", type: DataType.UINT8, max: 0xff},
-                ],
-            },
-            tuyaSetMinimumBrightness: {
-                name: "tuyaSetMinimumBrightness",
-                ID: 0xe0,
-                parameters: [{name: "minimum", type: DataType.UINT16, max: 0xffff}],
-            },
-            tuyaMoveToHueAndSaturationBrightness2: {
-                name: "tuyaMoveToHueAndSaturationBrightness2",
-                ID: 0xe1,
-                parameters: [
-                    {name: "hue", type: DataType.UINT16, max: 0xffff},
-                    {name: "saturation", type: DataType.UINT16, max: 0xffff},
-                    {name: "brightness", type: DataType.UINT16, max: 0xffff},
-                ],
-            },
-            tuyaRgbMode: {name: "tuyaRgbMode", ID: 0xf0, parameters: [{name: "enable", type: DataType.UINT8, max: 0xff}]},
-            tuyaOnStartUp: {
-                name: "tuyaOnStartUp",
-                ID: 0xf9,
-                parameters: [
-                    {name: "mode", type: DataType.UINT16, max: 0xffff},
-                    {name: "data", type: BuffaloZclDataType.LIST_UINT8},
-                ],
-            },
-            tuyaDoNotDisturb: {name: "tuyaDoNotDisturb", ID: 0xfa, parameters: [{name: "enable", type: DataType.UINT8, max: 0xff}]},
-            tuyaOnOffTransitionTime: {
-                name: "tuyaOnOffTransitionTime",
-                ID: 0xfb,
-                parameters: [
-                    {name: "unknown", type: DataType.UINT8, max: 0xff},
-                    {name: "onTransitionTime", type: BuffaloZclDataType.BIG_ENDIAN_UINT24},
-                    {name: "offTransitionTime", type: BuffaloZclDataType.BIG_ENDIAN_UINT24},
-                ],
             },
         },
         commandsResponse: {},

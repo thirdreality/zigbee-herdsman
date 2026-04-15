@@ -491,12 +491,55 @@ const CUSTOM_CLUSTERS = {
         commands: {},
         commandsResponse: {},
     },
+    closuresWindowCovering: {
+        name: "closuresWindowCovering",
+        ID: Zcl.Clusters.closuresWindowCovering.ID,
+        attributes: {
+            calibrationMode: {
+                name: "calibrationMode",
+                ID: 0xf002,
+                type: Zcl.DataType.ENUM8,
+                manufacturerCode: Zcl.ManufacturerCode.LEGRAND_GROUP,
+                write: true,
+                max: 0xff,
+            },
+            tuyaMotorReversal: {name: "tuyaMotorReversal", ID: 0xf002, type: Zcl.DataType.ENUM8, write: true, max: 0xff},
+        },
+        commands: {},
+        commandsResponse: {},
+    },
+    lightingColorCtrl: {
+        name: "lightingColorCtrl",
+        ID: Zcl.Clusters.lightingColorCtrl.ID,
+        attributes: {},
+        commands: {
+            tuyaMoveToHueAndSaturationBrightness: {
+                name: "tuyaMoveToHueAndSaturationBrightness",
+                ID: 0x06,
+                parameters: [
+                    {name: "hue", type: Zcl.DataType.UINT8, max: 0xff},
+                    {name: "saturation", type: Zcl.DataType.UINT8, max: 0xff},
+                    {name: "transtime", type: Zcl.DataType.UINT16, max: 0xffff},
+                    {name: "brightness", type: Zcl.DataType.UINT8, max: 0xff},
+                ],
+            },
+        },
+        commandsResponse: {},
+    },
 } satisfies CustomClusters;
 
 interface CustomClustersTypes extends Record<string, TCustomCluster> {
     hvacThermostat: {
         attributes: {
             viessmannWindowOpenInternal: number;
+        };
+        commands: never;
+        commandResponses: never;
+    };
+    closuresWindowCovering: {
+        attributes: {
+            calibrationMode: number;
+            tuyaMotorReversal: number;
         };
         commands: never;
         commandResponses: never;
@@ -5438,6 +5481,7 @@ describe("Controller", () => {
         const device = controller.getDeviceByIeeeAddr("0x129")!;
         const endpoint = device.getEndpoint(1)!;
         mocksendZclFrameToEndpoint.mockClear();
+        device.addCustomCluster("lightingColorCtrl", CUSTOM_CLUSTERS.lightingColorCtrl);
         await endpoint.command("lightingColorCtrl", "tuyaMoveToHueAndSaturationBrightness", {hue: 1, saturation: 1, transtime: 0, brightness: 22});
         expect(mocksendZclFrameToEndpoint.mock.calls[0][0]).toBe("0x129");
         expect(mocksendZclFrameToEndpoint.mock.calls[0][1]).toBe(129);
@@ -8830,12 +8874,14 @@ describe("Controller", () => {
             const buffer = Buffer.from([28, 33, 16, 13, 1, 2, 240, 0, 48, 4]);
             await controller.start();
             await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
+            const device = controller.getDeviceByIeeeAddr("0x129")!;
+            device.addCustomCluster("closuresWindowCovering", CUSTOM_CLUSTERS.closuresWindowCovering);
 
             const frame = Zcl.Frame.fromBuffer(
-                Zcl.Utils.getCluster("closuresWindowCovering", undefined, {}).ID,
+                Zcl.Utils.getCluster("closuresWindowCovering", undefined, CUSTOM_CLUSTERS).ID,
                 Zcl.Header.fromBuffer(buffer),
                 buffer,
-                {},
+                CUSTOM_CLUSTERS,
             );
             await mockAdapterEvents.zclPayload({
                 wasBroadcast: false,
@@ -8858,11 +8904,14 @@ describe("Controller", () => {
             const buffer = Buffer.from([28, 33, 16, 13, 1, 2, 240, 0, 48, 4]);
             await controller.start();
             await mockAdapterEvents.deviceJoined({networkAddress: 177, ieeeAddr: "0x177"});
+            const device = controller.getDeviceByIeeeAddr("0x177")!;
+            device.addCustomCluster("closuresWindowCovering", CUSTOM_CLUSTERS.closuresWindowCovering);
+
             const frame = Zcl.Frame.fromBuffer(
-                Zcl.Utils.getCluster("closuresWindowCovering", undefined, {}).ID,
+                Zcl.Utils.getCluster("closuresWindowCovering", undefined, CUSTOM_CLUSTERS).ID,
                 Zcl.Header.fromBuffer(buffer),
                 buffer,
-                {},
+                CUSTOM_CLUSTERS,
             );
             await mockAdapterEvents.zclPayload({
                 wasBroadcast: false,
@@ -8884,11 +8933,14 @@ describe("Controller", () => {
             const buffer = Buffer.from([24, 242, 10, 2, 240, 48, 4]);
             await controller.start();
             await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
+            const device = controller.getDeviceByIeeeAddr("0x129")!;
+            device.addCustomCluster("closuresWindowCovering", CUSTOM_CLUSTERS.closuresWindowCovering);
+
             const frame = Zcl.Frame.fromBuffer(
-                Zcl.Utils.getCluster("closuresWindowCovering", undefined, {}).ID,
+                Zcl.Utils.getCluster("closuresWindowCovering", undefined, CUSTOM_CLUSTERS).ID,
                 Zcl.Header.fromBuffer(buffer),
                 buffer,
-                {},
+                CUSTOM_CLUSTERS,
             );
             await mockAdapterEvents.zclPayload({
                 wasBroadcast: false,
@@ -8910,11 +8962,14 @@ describe("Controller", () => {
             const buffer = Buffer.from([24, 242, 10, 2, 240, 48, 4]);
             await controller.start();
             await mockAdapterEvents.deviceJoined({networkAddress: 177, ieeeAddr: "0x177"});
+            const device = controller.getDeviceByIeeeAddr("0x177")!;
+            device.addCustomCluster("closuresWindowCovering", CUSTOM_CLUSTERS.closuresWindowCovering);
+
             const frame = Zcl.Frame.fromBuffer(
-                Zcl.Utils.getCluster("closuresWindowCovering", undefined, {}).ID,
+                Zcl.Utils.getCluster("closuresWindowCovering", undefined, CUSTOM_CLUSTERS).ID,
                 Zcl.Header.fromBuffer(buffer),
                 buffer,
-                {},
+                CUSTOM_CLUSTERS,
             );
             await mockAdapterEvents.zclPayload({
                 wasBroadcast: false,
@@ -8939,9 +8994,11 @@ describe("Controller", () => {
             const buffer = Buffer.from([28, 33, 16, 13, 0, 2, 240]);
             await controller.start();
             await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
+            const device = controller.getDeviceByIeeeAddr("0x129")!;
+            device.addCustomCluster("closuresWindowCovering", CUSTOM_CLUSTERS.closuresWindowCovering);
 
             const frame = Zcl.Frame.fromBuffer(
-                Zcl.Utils.getCluster("closuresWindowCovering", undefined, {}).ID,
+                Zcl.Utils.getCluster("closuresWindowCovering", undefined, CUSTOM_CLUSTERS).ID,
                 Zcl.Header.fromBuffer(buffer),
                 buffer,
                 {},
@@ -8966,8 +9023,10 @@ describe("Controller", () => {
             const buffer = Buffer.from([28, 33, 16, 13, 0, 2, 240]);
             await controller.start();
             await mockAdapterEvents.deviceJoined({networkAddress: 177, ieeeAddr: "0x177"});
+            const device = controller.getDeviceByIeeeAddr("0x177")!;
+            device.addCustomCluster("closuresWindowCovering", CUSTOM_CLUSTERS.closuresWindowCovering);
             const frame = Zcl.Frame.fromBuffer(
-                Zcl.Utils.getCluster("closuresWindowCovering", undefined, {}).ID,
+                Zcl.Utils.getCluster("closuresWindowCovering", undefined, CUSTOM_CLUSTERS).ID,
                 Zcl.Header.fromBuffer(buffer),
                 buffer,
                 {},
@@ -8991,8 +9050,10 @@ describe("Controller", () => {
             const buffer = Buffer.from([24, 242, 0, 2, 240]);
             await controller.start();
             await mockAdapterEvents.deviceJoined({networkAddress: 129, ieeeAddr: "0x129"});
+            const device = controller.getDeviceByIeeeAddr("0x129")!;
+            device.addCustomCluster("closuresWindowCovering", CUSTOM_CLUSTERS.closuresWindowCovering);
             const frame = Zcl.Frame.fromBuffer(
-                Zcl.Utils.getCluster("closuresWindowCovering", undefined, {}).ID,
+                Zcl.Utils.getCluster("closuresWindowCovering", undefined, CUSTOM_CLUSTERS).ID,
                 Zcl.Header.fromBuffer(buffer),
                 buffer,
                 {},
@@ -9016,8 +9077,10 @@ describe("Controller", () => {
             const buffer = Buffer.from([24, 242, 0, 2, 240]);
             await controller.start();
             await mockAdapterEvents.deviceJoined({networkAddress: 177, ieeeAddr: "0x177"});
+            const device = controller.getDeviceByIeeeAddr("0x177")!;
+            device.addCustomCluster("closuresWindowCovering", CUSTOM_CLUSTERS.closuresWindowCovering);
             const frame = Zcl.Frame.fromBuffer(
-                Zcl.Utils.getCluster("closuresWindowCovering", undefined, {}).ID,
+                Zcl.Utils.getCluster("closuresWindowCovering", undefined, CUSTOM_CLUSTERS).ID,
                 Zcl.Header.fromBuffer(buffer),
                 buffer,
                 {},
