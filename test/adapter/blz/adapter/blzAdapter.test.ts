@@ -31,15 +31,22 @@ describe("BLZ Adapter", () => {
       panId: number;
       extendedPanId: Buffer;
       Channel: number;
+      nwkUpdateId: number;
     };
     blz: {
       isInitialized: ReturnType<typeof vi.fn>;
+      leaveNetwork: ReturnType<typeof vi.fn>;
+      formNetwork: ReturnType<typeof vi.fn>;
       version: { product: number };
     };
     backupMan: {
       createBackup: ReturnType<typeof vi.fn>;
     };
     setNode: ReturnType<typeof vi.fn>;
+    getNetworkKeyInfo: ReturnType<typeof vi.fn>;
+    getGlobalTcLinkKey: ReturnType<typeof vi.fn>;
+    setNetworkKeyInfo: ReturnType<typeof vi.fn>;
+    setGlobalTcLinkKey: ReturnType<typeof vi.fn>;
   };
 
   const networkOptions: NetworkOptions = {
@@ -77,15 +84,22 @@ describe("BLZ Adapter", () => {
         panId: 0x1234,
         extendedPanId: Buffer.from([1, 2, 3, 4, 5, 6, 7, 8]),
         Channel: 11,
+        nwkUpdateId: 0,
       },
       blz: {
         isInitialized: vi.fn(),
+        leaveNetwork: vi.fn(),
+        formNetwork: vi.fn(),
         version: { product: 1 },
       },
       backupMan: {
         createBackup: vi.fn(),
       },
       setNode: vi.fn(),
+      getNetworkKeyInfo: vi.fn(),
+      getGlobalTcLinkKey: vi.fn(),
+      setNetworkKeyInfo: vi.fn(),
+      setGlobalTcLinkKey: vi.fn(),
     };
 
     vi.mocked(Driver).mockImplementation(() => driverMock as any);
@@ -142,7 +156,73 @@ describe("BLZ Adapter", () => {
         panID: 0x1234,
         extendedPanID: "0x0102030405060708",
         channel: 11,
+        nwkUpdateID: 0,
       });
+    });
+
+    it("should preserve the extended PAN ID when changing channel", async () => {
+      driverMock.networkParams.panId = 0x2ea0;
+      driverMock.networkParams.extendedPanId = Buffer.from(
+        "b3c6675b7437d674",
+        "hex",
+      );
+      driverMock.networkParams.Channel = 11;
+      driverMock.networkParams.nwkUpdateId = 0;
+      driverMock.makeApsFrame.mockReturnValue({
+        sequence: 9,
+        profileId: Zdo.ZDO_PROFILE_ID,
+        clusterId: Zdo.ClusterId.NWK_UPDATE_REQUEST,
+        sourceEndpoint: 0,
+        destinationEndpoint: 0,
+      });
+      driverMock.brequest.mockResolvedValue(true);
+      driverMock.getNetworkKeyInfo.mockResolvedValue({
+        nwkKey: Buffer.from("05b02757f70f2384c89cf08592bdfb4f", "hex"),
+        outgoingFrameCounter: 40968,
+        nwkKeySeqNum: 0,
+      });
+      driverMock.getGlobalTcLinkKey.mockResolvedValue({
+        linkKey: Buffer.alloc(16),
+        outgoingFrameCounter: 0,
+      });
+      driverMock.blz.leaveNetwork.mockResolvedValue(BlzStatus.SUCCESS);
+      driverMock.blz.formNetwork.mockResolvedValue(BlzStatus.SUCCESS);
+      driverMock.setNetworkKeyInfo.mockResolvedValue(BlzStatus.SUCCESS);
+      driverMock.setGlobalTcLinkKey.mockResolvedValue(BlzStatus.SUCCESS);
+
+      const payload = Zdo.Buffalo.buildRequest(
+        true,
+        Zdo.ClusterId.NWK_UPDATE_REQUEST,
+        [15],
+        0xfe,
+        undefined,
+        1,
+        undefined,
+      );
+
+      const change = adapter.sendZdo(
+        ZSpec.BLANK_EUI64,
+        ZSpec.BroadcastAddress.SLEEPY,
+        Zdo.ClusterId.NWK_UPDATE_REQUEST,
+        payload,
+        true,
+      );
+
+      await vi.advanceTimersByTimeAsync(24000);
+      await change;
+
+      expect(driverMock.brequest).toHaveBeenCalledWith(
+        ZSpec.BroadcastAddress.SLEEPY,
+        expect.objectContaining({
+          clusterId: Zdo.ClusterId.NWK_UPDATE_REQUEST,
+        }),
+        Buffer.from("0900800000fe01ffff", "hex"),
+      );
+      expect(driverMock.blz.formNetwork).toHaveBeenCalledWith(
+        BigInt("0xb3c6675b7437d674"),
+        0x2ea0,
+        15,
+      );
     });
   });
 

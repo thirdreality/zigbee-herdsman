@@ -127,6 +127,18 @@ export class BLZFrameData {
     return this._cls_;
   }
 
+  toJSON(): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+
+    for (const key of Object.keys(this)) {
+      const value = (this as Record<string, unknown>)[key];
+      result[key] =
+        typeof value === "bigint" ? `0x${value.toString(16)}` : value;
+    }
+
+    return result;
+  }
+
   get id(): number {
     return this._id_;
   }

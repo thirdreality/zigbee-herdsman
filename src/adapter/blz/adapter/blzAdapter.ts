@@ -20,7 +20,7 @@ import {
   StartResult,
 } from "../../tstype";
 import { Driver, BlzIncomingMessage } from "../driver";
-import { BlzEUI64, BlzStatus, uint64_t } from "../driver/types";
+import { BlzEUI64, BlzStatus } from "../driver/types";
 
 const NS = "zh:blz";
 
@@ -684,12 +684,7 @@ export class BLZAdapter extends Adapter {
 
     // 6. Reform network on new channel
     logger.info(`[BLZ] Reforming network on channel ${newChannel}...`, NS);
-    const extPanIdBuffer =
-      typeof currentParams.extendedPanID === "string"
-        ? Buffer.from(currentParams.extendedPanID.replace("0x", ""), "hex")
-        : Buffer.from(currentParams.extendedPanID);
-
-    const [extPanId] = uint64_t.deserialize(uint64_t, extPanIdBuffer);
+    const extPanId = BigInt(currentParams.extendedPanID);
     const formStatus = await this.driver.blz.formNetwork(
       extPanId,
       currentParams.panID,
