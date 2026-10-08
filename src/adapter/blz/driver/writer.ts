@@ -55,7 +55,7 @@ export class Writer extends stream.Readable {
         }
     }
 
-    private makeControlByte(isDebug = false, isRetransmission: boolean): number {
+    private makeControlByte(isDebug: boolean, isRetransmission: boolean): number {
         return (isDebug ? consts.DEBUG : 0x00) | (isRetransmission ? consts.RETX : 0x00);
     }
 }

@@ -52,7 +52,7 @@ export class int_t {
             throw new RangeError(`Buffer too small. Expected at least ${cls._size} bytes, received ${data.length}`);
         }
 
-        let value;
+        let value: number | bigint;
         if (cls._size <= 6) {
             // Use native readIntLE or readUIntLE for sizes up to 6 bytes
             value = cls._signed ? data.readIntLE(0, cls._size) : data.readUIntLE(0, cls._size);
@@ -71,7 +71,7 @@ export class int_t {
     static valueToName(cls: any, value: any): string {
         for (const prop of Object.getOwnPropertyNames(cls)) {
             const desc = Object.getOwnPropertyDescriptor(cls, prop);
-            if (desc !== undefined && desc.enumerable && desc.writable && value == desc.value) {
+            if (desc?.enumerable && desc.writable && value === desc.value) {
                 return `${cls.name}.${prop}`;
             }
         }
@@ -82,7 +82,7 @@ export class int_t {
     static valueName(cls: any, value: any): string {
         for (const prop of Object.getOwnPropertyNames(cls)) {
             const desc = Object.getOwnPropertyDescriptor(cls, prop);
-            if (desc !== undefined && desc.enumerable && desc.writable && value == desc.value) {
+            if (desc?.enumerable && desc.writable && value === desc.value) {
                 return `${prop}`;
             }
         }
@@ -136,7 +136,7 @@ export class uint64_t extends uint_t {
 
 export class LVBytes {
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
-    static serialize(cls: any, value: any[]): Buffer {
+    static serialize(_cls: any, value: any[]): Buffer {
         if (Buffer.isBuffer(value)) {
             const ret = Buffer.alloc(1);
             ret.writeUInt8(value.length, 0);
@@ -146,7 +146,7 @@ export class LVBytes {
     }
 
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
-    static deserialize(cls: any, data: Buffer): any[] {
+    static deserialize(_cls: any, data: Buffer): any[] {
         const l = data.readIntLE(0, 1);
         const s = data.subarray(1, l + 1);
         return [s, data.subarray(l + 1)];
@@ -162,7 +162,7 @@ export abstract class List {
 
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
     static deserialize(cls: any, data: Buffer): any[] {
-        let item;
+        let item: unknown;
         /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
         const r: any[] = [];
         while (data) {
@@ -183,8 +183,8 @@ class _LVList extends List {
 
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
     static deserialize(cls: any, data: Buffer): any[] {
-        let item;
-        let length;
+        let item: unknown;
+        let length: number;
         /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
         const r: any[] = [];
         [length, data] = [data[0], data.subarray(1)];
@@ -216,7 +216,7 @@ export function LVList(itemtype: any): List {
 
 export class WordList extends List {
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
-    static serialize(cls: any, value: any[]): Buffer {
+    static serialize(_cls: any, value: any[]): Buffer {
         const data = value.map((i) => Buffer.from(uint16_t.serialize(uint16_t, i)));
         return Buffer.concat(data);
     }
@@ -231,7 +231,7 @@ class _FixedList extends List {
 
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
     static deserialize(cls: any, data: Buffer): any[] {
-        let item;
+        let item: unknown;
         /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
         const r: any[] = [];
         for (let i = 0; i < cls._length; i++) {
@@ -261,12 +261,12 @@ export function fixed_list(
 
 export class Bytes {
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
-    static serialize(cls: any, value: any[]): Buffer {
+    static serialize(_cls: any, value: any[]): Buffer {
         return Buffer.from(value);
     }
 
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
-    static deserialize(cls: any, data: Buffer): any[] {
+    static deserialize(_cls: any, data: Buffer): any[] {
         return [data];
     }
 }

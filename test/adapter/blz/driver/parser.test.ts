@@ -1,5 +1,6 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import * as consts from "../../../../src/adapter/blz/driver/consts";
+import type Frame from "../../../../src/adapter/blz/driver/frame";
 import {Parser} from "../../../../src/adapter/blz/driver/parser";
 import crc16ccitt from "../../../../src/adapter/blz/driver/utils/crc16ccitt";
 
@@ -44,7 +45,7 @@ describe("BLZ Parser", () => {
     /**
      * Helper to get parsed frame from parser
      */
-    function getParsedFrame(parser: Parser): Promise<any> {
+    function getParsedFrame(parser: Parser): Promise<Frame> {
         return new Promise((resolve) => {
             parser.once("parsed", (frame) => {
                 resolve(frame);
@@ -55,10 +56,10 @@ describe("BLZ Parser", () => {
     /**
      * Helper to collect multiple parsed frames
      */
-    function collectFrames(parser: Parser, count: number): Promise<any[]> {
+    function collectFrames(parser: Parser, count: number): Promise<Frame[]> {
         return new Promise((resolve) => {
-            const frames: any[] = [];
-            const handler = (frame: any) => {
+            const frames: Frame[] = [];
+            const handler = (frame: Frame) => {
                 frames.push(frame);
                 if (frames.length === count) {
                     parser.off("parsed", handler);

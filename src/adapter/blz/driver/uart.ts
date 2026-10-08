@@ -1,5 +1,6 @@
 /* istanbul ignore file */
 
+import assert from "node:assert";
 import {EventEmitter} from "node:events";
 import net from "node:net";
 
@@ -31,8 +32,7 @@ export class SerialDriver extends EventEmitter {
     private initialized: boolean;
     private sendSeq = 0; // next frame number to send
     private recvSeq = 0; // next frame number to receive
-    private ackSeq = 0; // next number after the last accepted frame
-    private rejectCondition = false;
+
     private waitress: Waitress<BLZPacket, BLZPacketMatcher>;
     private queue: Queue;
 
@@ -46,10 +46,11 @@ export class SerialDriver extends EventEmitter {
     }
 
     async connect(options: SerialPortOptions): Promise<void> {
-        if (isTcpPath(options.path!)) {
-            await this.openSocketPort(options.path!);
+        assert(options.path, "BLZ serial port path is required");
+        if (isTcpPath(options.path)) {
+            await this.openSocketPort(options.path);
         } else {
-            await this.openSerialPort(options.path!, options.baudRate!, options.rtscts!);
+            await this.openSerialPort(options.path, options.baudRate ?? 2000000, options.rtscts ?? false);
         }
     }
 
@@ -101,7 +102,8 @@ export class SerialDriver extends EventEmitter {
         const info = parseTcpPath(path);
         logger.debug(`Opening TCP socket with ${info.host}:${info.port}`, NS);
 
-        this.socketPort = new net.Socket();
+        const socketPort = new net.Socket();
+        this.socketPort = socketPort;
         this.socketPort.setNoDelay(true);
         this.socketPort.setKeepAlive(true, 15000);
 
@@ -117,14 +119,14 @@ export class SerialDriver extends EventEmitter {
                 reject(err);
             };
 
-            this.socketPort!.on("connect", () => {
+            socketPort.on("connect", () => {
                 logger.debug("Socket connected", NS);
             });
-            this.socketPort!.on("ready", async (): Promise<void> => {
+            socketPort.on("ready", async (): Promise<void> => {
                 logger.debug("Socket ready", NS);
-                this.socketPort!.removeListener("error", openError);
-                this.socketPort!.once("close", this.onPortClose.bind(this));
-                this.socketPort!.on("error", this.onPortError.bind(this));
+                socketPort.removeListener("error", openError);
+                socketPort.once("close", this.onPortClose.bind(this));
+                socketPort.on("error", this.onPortError.bind(this));
 
                 // reset
                 await this.reset();
@@ -133,9 +135,9 @@ export class SerialDriver extends EventEmitter {
 
                 resolve();
             });
-            this.socketPort!.once("error", openError);
+            socketPort.once("error", openError);
 
-            this.socketPort!.connect(info.port, info.host);
+            socketPort.connect(info.port, info.host);
         });
     }
 
@@ -167,7 +169,6 @@ export class SerialDriver extends EventEmitter {
                     this.handleDATA(frame);
             }
         } catch (error) {
-            this.rejectCondition = true;
             logger.error(`Error parsing frame: ${error}`, NS);
         }
     }
@@ -207,7 +208,7 @@ export class SerialDriver extends EventEmitter {
         // this.waitress.resolve({frameId: -1});
     }
 
-    private async handleError(frame: Frame): Promise<void> {
+    private handleError(_frame: Frame): void {
         logger.error("<-- Error: NCP is in error state", NS);
         // await this.reset();
     }
@@ -218,15 +219,16 @@ export class SerialDriver extends EventEmitter {
         this.sendSeq = 0;
         this.recvSeq = 0;
 
-        return this.queue.execute(async () => {
+        return await this.queue.execute(() => {
             try {
                 logger.debug(`UART reset: sending reset frame with seq=${this.sendSeq}, ackSeq=${this.recvSeq}`, NS);
                 this.writer.sendReset(this.sendSeq, this.recvSeq);
                 logger.debug("UART reset frame sent successfully", NS);
+                return Promise.resolve();
             } catch (e) {
                 logger.error(`Reset failed: ${e}`, NS);
                 this.emit("reset");
-                throw new Error(`Reset error: ${e}`);
+                return Promise.reject(new Error(`Reset error: ${e}`));
             }
         });
     }

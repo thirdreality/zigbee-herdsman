@@ -19,7 +19,7 @@ export class BlzStruct {
     static deserialize(cls: any, data: Buffer): any[] {
         const r = new cls();
         for (const [field_name, field_type] of cls._fields) {
-            let v;
+            let v: unknown;
             [v, data] = field_type.deserialize(field_type, data);
             r[field_name] = v;
         }
@@ -185,9 +185,9 @@ export class BlzMultiAddress extends BlzStruct {
     ];
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
     static serialize(cls: any, obj: any): Buffer {
-        const addrmode = obj["addrmode"];
+        const addrmode = obj.addrmode;
 
-        const fields = addrmode == 3 ? cls.fields3 : cls.fields1;
+        const fields = addrmode === 3 ? cls.fields3 : cls.fields1;
         return Buffer.concat(
             /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
             fields.map((field: any[]) => {

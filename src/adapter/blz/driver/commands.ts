@@ -3,7 +3,7 @@
 import {BlzEUI64, BlzMultiAddress, BlzNeighbors, BlzNodeDescriptor, BlzNodeId, BlzRoutingTable, BlzSimpleDescriptor, Bool} from "./types";
 
 export interface ParamsDesc {
-    /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
+    // biome-ignore lint/suspicious/noExplicitAny: Legacy runtime field descriptors have heterogeneous codec/value types; keep the exemption at the reflection boundary.
     [s: string]: any;
 }
 

@@ -62,7 +62,7 @@ describe("BLZ Adapter", () => {
         disableLED: false,
     };
 
-    beforeEach(async () => {
+    beforeEach(() => {
         vi.useFakeTimers();
         driverMock = {
             startup: vi.fn(),
@@ -97,7 +97,7 @@ describe("BLZ Adapter", () => {
             setGlobalTcLinkKey: vi.fn(),
         };
 
-        vi.mocked(Driver).mockImplementation(() => driverMock as any);
+        vi.mocked(Driver).mockImplementation(() => driverMock as unknown as Driver);
         adapter = new BLZAdapter(networkOptions, serialPortOptions, "/path/to/backup", adapterOptions);
     });
 

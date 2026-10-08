@@ -13,7 +13,7 @@ vi.mock("../../../../src/adapter/blz/driver/blz", async () => {
     return {
         ...actual,
         BLZFrameData: {
-            createFrame: vi.fn().mockImplementation((frameId: number, isRequest: boolean, params: any) => {
+            createFrame: vi.fn().mockImplementation((frameId: number, isRequest: boolean, params: Record<string, unknown>) => {
                 const frameName = Object.entries(FRAMES).find(([_, desc]) => desc.ID === frameId)?.[0];
                 if (!frameName) {
                     throw new Error(`Unknown frame ID: ${frameId}`);
@@ -59,7 +59,7 @@ describe("BLZ Driver", () => {
             removeAllListeners: vi.fn(),
         };
 
-        vi.mocked(SerialDriver).mockImplementation(() => serialDriverMock as any);
+        vi.mocked(SerialDriver).mockImplementation(() => serialDriverMock as unknown as SerialDriver);
         blz = new Blz();
     });
 

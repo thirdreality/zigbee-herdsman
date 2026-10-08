@@ -103,14 +103,19 @@ describe("BLZ Serial Driver", () => {
             sendData: vi.fn(),
         };
 
-        vi.mocked(SerialPort).mockImplementation(() => serialPortMock as any);
-        vi.mocked(Parser).mockImplementation(() => parserMock as any);
-        vi.mocked(Writer).mockImplementation(() => writerMock as any);
+        vi.mocked(SerialPort).mockImplementation(() => serialPortMock as unknown as SerialPort);
+        vi.mocked(Parser).mockImplementation(() => parserMock as unknown as Parser);
+        vi.mocked(Writer).mockImplementation(() => writerMock as unknown as Writer);
 
         driver = new SerialDriver();
     });
 
     describe("Connection", () => {
+        it("rejects a missing serial path before opening hardware", async () => {
+            await expect(driver.connect({...serialPortOptions, path: undefined})).rejects.toThrow("BLZ serial port path is required");
+            expect(serialPortMock.asyncOpen).not.toHaveBeenCalled();
+        });
+
         it("should connect successfully", async () => {
             serialPortMock.asyncOpen.mockResolvedValue(undefined);
 
@@ -186,7 +191,7 @@ describe("BLZ Serial Driver", () => {
             expect(writerMock.sendACK).not.toHaveBeenCalled();
         });
 
-        it("should handle ERROR frames", async () => {
+        it("should handle ERROR frames", () => {
             const frame = createFrame(0x0002, 0x01, 0x00);
 
             parserMock.on.mock.calls.find((call) => call[0] === "parsed")?.[1](frame);

@@ -1,3 +1,4 @@
+import assert from "node:assert";
 /* istanbul ignore file */
 
 import {EventEmitter} from "node:events";
@@ -34,11 +35,6 @@ type BlzFrame = {
 type BlzWaitressMatcher = {
     address: number | string;
     clusterId: number;
-};
-
-type IeeeMfg = {
-    mfgId: number;
-    prefix: number[];
 };
 
 export interface BlzIncomingMessage {
@@ -204,7 +200,7 @@ export class Driver extends EventEmitter {
 
             const st = await this.blz.leaveNetwork();
 
-            if (st != BlzStatus.SUCCESS) {
+            if (st !== BlzStatus.SUCCESS) {
                 logger.error(`leaveNetwork returned unexpected status: ${st}`, NS);
             }
 
@@ -267,11 +263,11 @@ export class Driver extends EventEmitter {
         logger.debug(`needToBeInitialized success stack up: ${valid}`, NS);
         const netParams = await this.blz.execCommand("getNetworkParameters");
         logger.debug(`Current Node type: ${netParams.nodeType}, Network parameters: ${netParams}`, NS);
-        valid = valid && netParams.status == BlzStatus.SUCCESS;
+        valid = valid && netParams.status === BlzStatus.SUCCESS;
         logger.debug(`needToBeInitialized success get parameters: ${valid}`, NS);
-        valid = valid && netParams.nodeType == BlzNodeType.COORDINATOR;
+        valid = valid && netParams.nodeType === BlzNodeType.COORDINATOR;
         logger.debug(`needToBeInitialized is coordinator: ${valid}`, NS);
-        valid = valid && options.panID == netParams.panId;
+        valid = valid && options.panID === netParams.panId;
         logger.debug(`needToBeInitialized same PanID: ${valid}`, NS);
         // valid = valid && options.channelList.includes(netParams.channel);
         // // try to add support for change channel so if only channel is different, it can still work as resumed
@@ -291,7 +287,7 @@ export class Driver extends EventEmitter {
     }
 
     private async formNetwork(restore: boolean): Promise<void> {
-        let backup;
+        let backup: Awaited<ReturnType<BLZAdapterBackup["getStoredBackup"]>>;
         if (restore) {
             backup = await this.backupMan.getStoredBackup();
 
@@ -315,10 +311,12 @@ export class Driver extends EventEmitter {
         }
 
         if (restore) {
-            const [backupextendedPanID] = uint64_t.deserialize(uint64_t, Buffer.from(backup!.networkOptions.extendedPanId));
-            await this.blz.formNetwork(backupextendedPanID, backup!.networkOptions.panId, backup!.logicalChannel);
+            assert(backup, "No valid backup found.");
+            const [backupextendedPanID] = uint64_t.deserialize(uint64_t, Buffer.from(backup.networkOptions.extendedPanId));
+            await this.blz.formNetwork(backupextendedPanID, backup.networkOptions.panId, backup.logicalChannel);
         } else {
-            const [nwkoptextendedPanID] = uint64_t.deserialize(uint64_t, Buffer.from(this.nwkOpt.extendedPanID!));
+            assert(this.nwkOpt.extendedPanID, "BLZ extended PAN ID is required");
+            const [nwkoptextendedPanID] = uint64_t.deserialize(uint64_t, Buffer.from(this.nwkOpt.extendedPanID));
             await this.blz.formNetwork(nwkoptextendedPanID, this.nwkOpt.panID, this.nwkOpt.channelList[0]);
         }
     }
@@ -334,7 +332,7 @@ export class Driver extends EventEmitter {
                 apsFrame.sequence = 0;
                 apsFrame.groupId = frame.dstShortAddr;
 
-                if (frame.profileId == Zdo.ZDO_PROFILE_ID && frame.clusterId >= 0x8000 /* response only */) {
+                if (frame.profileId === Zdo.ZDO_PROFILE_ID && frame.clusterId >= 0x8000 /* response only */) {
                     const zdoResponse = Zdo.Buffalo.readResponse(true, frame.clusterId, frame.message);
 
                     if (frame.clusterId === Zdo.ClusterId.NETWORK_ADDRESS_RESPONSE) {
@@ -469,7 +467,7 @@ export class Driver extends EventEmitter {
         this.eui64ToNodeId.set(this.normalizeIeee(ieee.toString()), nwk);
     }
 
-    public async request(nwk: number | BlzEUI64, apsFrame: BlzApsFrame, data: Buffer, extendedTimeout = false): Promise<boolean> {
+    public async request(nwk: number | BlzEUI64, apsFrame: BlzApsFrame, data: Buffer, _extendedTimeout = false): Promise<boolean> {
         for (let attempt = 0; attempt < REQUEST_ATTEMPT_DELAYS.length; attempt++) {
             try {
                 const seq = (apsFrame.sequence + 1) & 0xff;
@@ -526,7 +524,7 @@ export class Driver extends EventEmitter {
     }
 
     // Modify mrequest to use sendApsData with multicast msgType
-    public async mrequest(apsFrame: BlzApsFrame, data: Buffer, timeout = 30000): Promise<boolean> {
+    public async mrequest(apsFrame: BlzApsFrame, data: Buffer, _timeout = 30000): Promise<boolean> {
         try {
             const seq = (apsFrame.sequence + 1) & 0xff;
             await this.blz.sendApsData(
@@ -575,7 +573,7 @@ export class Driver extends EventEmitter {
         return this.transactionID;
     }
 
-    public makeApsFrame(clusterId: number, disableResponse: boolean): BlzApsFrame {
+    public makeApsFrame(clusterId: number, _disableResponse: boolean): BlzApsFrame {
         const frame = new BlzApsFrame();
         frame.clusterId = clusterId;
         frame.profileId = 0;
@@ -739,12 +737,13 @@ export class Driver extends EventEmitter {
             return false;
         }
         let valid = true;
-        valid = valid && options.panID == backup.networkOptions.panId;
+        valid = valid && options.panID === backup.networkOptions.panId;
         logger.debug(`needsToBeRestore same PanID: ${valid}`, NS);
         valid = valid && options.channelList.includes(backup.logicalChannel);
         logger.debug(`needsToBeRestore valid channel: ${valid}`, NS);
         // Ensure both extendedPanIDs are compared with same endianness
-        const currentExtendedPanID = Buffer.from(options.extendedPanID!);
+        if (!options.extendedPanID || !options.networkKey) return false;
+        const currentExtendedPanID = Buffer.from(options.extendedPanID);
         const backupExtendedPanID = backup.networkOptions.extendedPanId;
         logger.debug(`Configured extendedPanID (raw): ${currentExtendedPanID.toString("hex")}`, NS);
         logger.debug(`Backup extendedPanID (raw): ${backupExtendedPanID.toString("hex")}`, NS);
@@ -756,7 +755,7 @@ export class Driver extends EventEmitter {
         logger.debug(`Backup extendedPanID (uint64): ${backupPanID.toString(16)}`, NS);
         valid = valid && currentPanID === backupPanID;
         logger.debug(`needsToBeRestore same extendedPanID: ${valid}`, NS);
-        const currentNetworkKey = Buffer.from(options.networkKey!);
+        const currentNetworkKey = Buffer.from(options.networkKey);
         const backupNetworkKey = backup.networkOptions.networkKey;
         logger.debug(`Configured networkKey (raw): ${currentNetworkKey.toString("hex")}`, NS);
         logger.debug(`Backup networkKey (raw): ${backupNetworkKey.toString("hex")}`, NS);

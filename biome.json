@@ -98,6 +98,23 @@
                     }
                 }
             }
+        },
+        {
+            "includes": ["src/adapter/blz/driver/types/basic.ts", "src/adapter/blz/driver/types/named.ts", "src/adapter/blz/driver/types/struct.ts"],
+            "linter": {
+                "rules": {
+                    "style": {
+                        "useNamingConvention": "off"
+                    },
+                    "suspicious": {
+                        "noExplicitAny": "off"
+                    },
+                    "complexity": {
+                        "noStaticOnlyClass": "off",
+                        "noThisInStatic": "off"
+                    }
+                }
+            }
         }
     ]
 }

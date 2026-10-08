@@ -155,7 +155,7 @@ describe("BLZ Types", () => {
         });
 
         it("should throw for invalid value type", () => {
-            expect(() => uint8_t.serialize(uint8_t, "invalid" as any)).toThrow(TypeError);
+            expect(() => uint8_t.serialize(uint8_t, "invalid" as unknown as number)).toThrow(TypeError);
         });
     });
 

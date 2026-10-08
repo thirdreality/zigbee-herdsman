@@ -4,7 +4,9 @@ import type {Buffer} from "node:buffer";
 
 type CalcFn = (buf: Buffer | number[], previous: number) => number;
 
-function defineCrc(model: string, calc: CalcFn): CalcFn {
+type CrcFn = CalcFn & {signed: CalcFn; unsigned: CalcFn; model: string};
+
+function defineCrc(model: string, calc: CalcFn): CrcFn {
     const fn = (buf: Buffer | number[], previous: number): number => calc(buf, previous) >>> 0;
     fn.signed = calc;
     fn.unsigned = fn;

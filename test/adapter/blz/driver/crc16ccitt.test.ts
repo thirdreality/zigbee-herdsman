@@ -174,21 +174,21 @@ describe("CRC16-CCITT", () => {
 
     describe("Function properties", () => {
         it("should have model property", () => {
-            expect((crc16ccitt as any).model).toBe("ccitt");
+            expect(crc16ccitt.model).toBe("ccitt");
         });
 
         it("should have signed function", () => {
-            expect(typeof (crc16ccitt as any).signed).toBe("function");
+            expect(typeof crc16ccitt.signed).toBe("function");
         });
 
         it("should have unsigned function", () => {
-            expect(typeof (crc16ccitt as any).unsigned).toBe("function");
+            expect(typeof crc16ccitt.unsigned).toBe("function");
         });
 
         it("unsigned and default should return same result", () => {
             const data = Buffer.from([0x01, 0x02, 0x03]);
             const defaultResult = crc16ccitt(data, 0xffff);
-            const unsignedResult = (crc16ccitt as any).unsigned(data, 0xffff);
+            const unsignedResult = crc16ccitt.unsigned(data, 0xffff);
             expect(defaultResult).toBe(unsignedResult);
         });
     });

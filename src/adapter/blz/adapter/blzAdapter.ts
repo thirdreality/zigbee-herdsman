@@ -52,7 +52,7 @@ export class BLZAdapter extends Adapter {
         this.driver.on("incomingMessage", this.processMessage.bind(this));
     }
 
-    private async processMessage(frame: BlzIncomingMessage): Promise<void> {
+    private processMessage(frame: BlzIncomingMessage): void {
         logger.debug(() => `processMessage: ${JSON.stringify(frame)}`, NS);
 
         if (frame.apsFrame.profileId === Zdo.ZDO_PROFILE_ID) {
@@ -83,7 +83,7 @@ export class BLZAdapter extends Adapter {
         }
     }
 
-    private async handleDeviceJoin(nwk: number, ieee: BlzEUI64): Promise<void> {
+    private handleDeviceJoin(nwk: number, ieee: BlzEUI64): void {
         // Driver emits ieee as "0x" prefixed string, use as-is
         const ieeeAddr = ieee.toString().startsWith("0x") ? ieee.toString() : `0x${ieee.toString()}`;
         logger.debug(() => `Device join request received: ${nwk} ${ieeeAddr}`, NS);
@@ -127,8 +127,8 @@ export class BLZAdapter extends Adapter {
         }
     }
 
-    public async getCoordinatorIEEE(): Promise<string> {
-        return `0x${this.driver.ieee.toString()}`;
+    public getCoordinatorIEEE(): Promise<string> {
+        return Promise.resolve(`0x${this.driver.ieee.toString()}`);
     }
 
     public async permitJoin(seconds: number, networkAddress?: number): Promise<void> {
@@ -168,19 +168,19 @@ export class BLZAdapter extends Adapter {
         }
     }
 
-    public async getCoordinatorVersion(): Promise<CoordinatorVersion> {
-        return {
+    public getCoordinatorVersion(): Promise<CoordinatorVersion> {
+        return Promise.resolve({
             type: `BLZ v${this.driver.blz.version.product}`,
             meta: this.driver.blz.version,
-        };
+        });
     }
 
-    public async addInstallCode(ieeeAddress: string, key: Buffer): Promise<void> {
-        throw new Error("Not supported");
+    public addInstallCode(_ieeeAddress: string, _key: Buffer): Promise<void> {
+        return Promise.reject(new Error("Not supported"));
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    public async reset(type: "soft" | "hard"): Promise<void> {
+    public async reset(_type: "soft" | "hard"): Promise<void> {
         return await Promise.reject(new Error("Not supported"));
     }
 
@@ -277,9 +277,10 @@ export class BLZAdapter extends Adapter {
             if (waiter && responseClusterId !== undefined) {
                 const response = await waiter.start().promise;
 
-                logger.debug(() => `<~~ [ZDO ${Zdo.ClusterId[responseClusterId]} ${JSON.stringify(response.zdoResponse!)}]`, NS);
+                logger.debug(() => `<~~ [ZDO ${Zdo.ClusterId[responseClusterId]} ${JSON.stringify(response.zdoResponse)}]`, NS);
 
-                return response.zdoResponse! as ZdoTypes.RequestToResponseMap[K];
+                assert(response.zdoResponse, "Missing ZDO response");
+                return response.zdoResponse as ZdoTypes.RequestToResponseMap[K];
             }
         }, networkAddress);
     }
@@ -598,7 +599,7 @@ export class BLZAdapter extends Adapter {
         );
         let response = null;
         const command = zclFrame.command;
-        if (command.response != undefined && disableResponse === false) {
+        if (command.response !== undefined && disableResponse === false) {
             response = this.waitForInternal(
                 networkAddress,
                 endpoint,
@@ -707,20 +708,20 @@ export class BLZAdapter extends Adapter {
         });
     }
 
-    public async getNetworkParameters(): Promise<NetworkParameters> {
+    public getNetworkParameters(): Promise<NetworkParameters> {
         const extPanId = this.driver.networkParams.extendedPanId;
         const extendedPanID = extPanId instanceof Buffer ? `0x${extPanId.toString("hex")}` : "0x0000000000000000";
 
-        return {
+        return Promise.resolve({
             panID: this.driver.networkParams.panId,
             extendedPanID,
             channel: this.driver.networkParams.Channel,
             nwkUpdateID: this.driver.networkParams.nwkUpdateId,
-        };
+        });
     }
 
-    public async supportsBackup(): Promise<boolean> {
-        return true;
+    public supportsBackup(): Promise<boolean> {
+        return Promise.resolve(true);
     }
 
     public async backup(): Promise<Models.Backup> {
@@ -728,8 +729,8 @@ export class BLZAdapter extends Adapter {
         return await this.driver.backupMan.createBackup();
     }
 
-    public async restoreChannelInterPAN(): Promise<void> {
-        throw new Error("Not supported");
+    public restoreChannelInterPAN(): Promise<void> {
+        return Promise.reject(new Error("Not supported"));
     }
 
     private checkInterpanLock(): void {
@@ -738,22 +739,22 @@ export class BLZAdapter extends Adapter {
         }
     }
 
-    public async sendZclFrameInterPANToIeeeAddr(zclFrame: Zcl.Frame, ieeeAddr: string): Promise<void> {
-        throw new Error("Not supported");
+    public sendZclFrameInterPANToIeeeAddr(_zclFrame: Zcl.Frame, _ieeeAddr: string): Promise<void> {
+        return Promise.reject(new Error("Not supported"));
     }
 
     public async sendZclFrameInterPANBroadcast(zclFrame: Zcl.Frame, timeout: number, disableResponse: false): Promise<ZclPayload>;
     public async sendZclFrameInterPANBroadcast(zclFrame: Zcl.Frame, timeout: number, disableResponse: true): Promise<undefined>;
-    public async sendZclFrameInterPANBroadcast(zclFrame: Zcl.Frame, timeout: number, disableResponse: boolean): Promise<ZclPayload | undefined> {
-        throw new Error("Not supported");
+    public sendZclFrameInterPANBroadcast(_zclFrame: Zcl.Frame, _timeout: number, _disableResponse: boolean): Promise<ZclPayload | undefined> {
+        return Promise.reject(new Error("Not supported"));
     }
 
-    public async setTransmitPower(value: number): Promise<void> {
-        throw new Error("Not supported");
+    public setTransmitPower(_value: number): Promise<void> {
+        return Promise.reject(new Error("Not supported"));
     }
 
-    public async setChannelInterPAN(channel: number): Promise<void> {
-        throw new Error("Not supported");
+    public setChannelInterPAN(_channel: number): Promise<void> {
+        return Promise.reject(new Error("Not supported"));
     }
 
     private waitForInternal(
@@ -781,8 +782,8 @@ export class BLZAdapter extends Adapter {
     public waitFor(
         networkAddress: number | undefined,
         endpoint: number,
-        frameType: Zcl.FrameType,
-        direction: Zcl.Direction,
+        _frameType: Zcl.FrameType,
+        _direction: Zcl.Direction,
         transactionSequenceNumber: number | undefined,
         clusterID: number,
         commandIdentifier: number,

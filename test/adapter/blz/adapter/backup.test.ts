@@ -39,14 +39,14 @@ describe("BLZ Adapter Backup", () => {
             getNetworkKeyInfo: vi.fn(),
         };
 
-        vi.mocked(Driver).mockImplementation(() => driverMock as any);
-        backup = new BLZAdapterBackup(driverMock as any, backupPath);
+        vi.mocked(Driver).mockImplementation(() => driverMock as unknown as Driver);
+        backup = new BLZAdapterBackup(driverMock as unknown as Driver, backupPath);
     });
 
     describe("Creating backup", () => {
         it("should create backup successfully", async () => {
             // Mock network parameters response
-            driverMock.blz.execCommand.mockImplementation((cmd: string, params?: any) => {
+            driverMock.blz.execCommand.mockImplementation((cmd: string, params?: Record<string, unknown>) => {
                 if (cmd === "getNetworkParameters") {
                     return Promise.resolve({
                         panId: 0x1234,
@@ -125,7 +125,7 @@ describe("BLZ Adapter Backup", () => {
 
             vi.mocked(fs.promises.access).mockResolvedValue(undefined);
             vi.mocked(fs.promises.readFile).mockResolvedValue(Buffer.from(JSON.stringify(mockBackupData)));
-            vi.mocked(BackupUtils.fromUnifiedBackup).mockReturnValue(mockParsedBackup as any);
+            vi.mocked(BackupUtils.fromUnifiedBackup).mockReturnValue(mockParsedBackup as unknown as ReturnType<typeof BackupUtils.fromUnifiedBackup>);
 
             const result = await backup.getStoredBackup();
             expect(result).toBe(mockParsedBackup);

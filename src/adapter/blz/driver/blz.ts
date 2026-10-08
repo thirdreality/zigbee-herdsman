@@ -1,3 +1,4 @@
+import assert from "node:assert";
 /* istanbul ignore file */
 
 import {EventEmitter} from "node:events";
@@ -48,7 +49,7 @@ export class BLZFrameData {
     _cls_: string;
     _id_: number;
     _isRequest_: boolean;
-    /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
+    // biome-ignore lint/suspicious/noExplicitAny: Legacy runtime field descriptors have heterogeneous codec/value types; keep the exemption at the reflection boundary.
     [name: string]: any;
 
     static createFrame(frameId: number, isRequest: boolean, params: ParamsDesc | Buffer): BLZFrameData {
@@ -56,7 +57,7 @@ export class BLZFrameData {
         if (!names) {
             throw new Error(`Unrecognized frame FrameID ${frameId}`);
         }
-        let frm: BLZFrameData;
+        let frm: BLZFrameData | undefined;
         names.every((frameName) => {
             BLZFrameData.getFrame(frameName);
             try {
@@ -67,7 +68,8 @@ export class BLZFrameData {
             }
             return false;
         });
-        return frm!;
+        assert(frm, `Unable to decode frame ID ${frameId}`);
+        return frm;
     }
 
     static getFrame(name: string): BLZFrameDesc {
@@ -90,7 +92,8 @@ export class BLZFrameData {
             }
         } else {
             for (const prop of Object.getOwnPropertyNames(frameDesc)) {
-                this[prop] = params![prop];
+                assert(params, `Missing parameters for ${key}`);
+                this[prop] = params[prop];
             }
         }
     }
@@ -129,18 +132,18 @@ export class BLZZDORequestFrameData {
     _cls_: string;
     _id_: number;
     _isRequest_: boolean;
-    /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
+    // biome-ignore lint/suspicious/noExplicitAny: Legacy runtime field descriptors have heterogeneous codec/value types; keep the exemption at the reflection boundary.
     [name: string]: any;
 
     static getFrame(key: string | number): BLZFrameDesc {
-        const name = typeof key == "string" ? key : ZDOREQUEST_NAME_BY_ID[key];
+        const name = typeof key === "string" ? key : ZDOREQUEST_NAME_BY_ID[key];
         const frameDesc = ZDOREQUESTS[name];
         if (!frameDesc) throw new Error(`Unrecognized ZDOFrame from FrameID ${key}`);
         return frameDesc;
     }
 
     constructor(key: string | number, isRequest: boolean, params: ParamsDesc | Buffer) {
-        if (typeof key == "string") {
+        if (typeof key === "string") {
             this._cls_ = key;
             this._id_ = ZDOREQUESTS[this._cls_].ID;
         } else {
@@ -185,18 +188,18 @@ export class BLZZDORequestFrameData {
 export class BLZZDOResponseFrameData {
     _cls_: string;
     _id_: number;
-    /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
+    // biome-ignore lint/suspicious/noExplicitAny: Legacy runtime field descriptors have heterogeneous codec/value types; keep the exemption at the reflection boundary.
     [name: string]: any;
 
     static getFrame(key: string | number): ParamsDesc {
-        const name = typeof key == "string" ? key : ZDORESPONSE_NAME_BY_ID[key];
+        const name = typeof key === "string" ? key : ZDORESPONSE_NAME_BY_ID[key];
         const frameDesc = ZDORESPONSES[name];
         if (!frameDesc) throw new Error(`Unrecognized ZDOFrame from FrameID ${key}`);
         return frameDesc.params;
     }
 
     constructor(key: string | number, params: ParamsDesc | Buffer) {
-        if (typeof key == "string") {
+        if (typeof key === "string") {
             this._cls_ = key;
             this._id_ = ZDORESPONSES[this._cls_].ID;
         } else {
@@ -452,7 +455,7 @@ export class Blz extends EventEmitter {
             logger.error("Failure to init network", NS);
             return false;
         }
-        return result.status == BlzStatus.SUCCESS;
+        return result.status === BlzStatus.SUCCESS;
     }
 
     async leaveNetwork(): Promise<number> {
@@ -528,16 +531,12 @@ export class Blz extends EventEmitter {
 
     public async getVersion(): Promise<void> {
         // Retrieve version info specific to BLZ
-        let verInfo = await this.getValue(BlzValueId.BLZ_VALUE_ID_STACK_VERSION);
+        const verInfo = await this.getValue(BlzValueId.BLZ_VALUE_ID_STACK_VERSION);
         // Update parsing logic if necessary
-        let build;
-        let major;
-        let minor;
-        let patch;
-        [build, verInfo] = uint16_t.deserialize(uint16_t, verInfo);
-        [major, verInfo] = uint8_t.deserialize(uint8_t, verInfo);
-        [minor, verInfo] = uint8_t.deserialize(uint8_t, verInfo);
-        [patch, verInfo] = uint8_t.deserialize(uint8_t, verInfo);
+        const [build, afterBuild] = uint16_t.deserialize(uint16_t, verInfo);
+        const [major, afterMajor] = uint8_t.deserialize(uint8_t, afterBuild);
+        const [minor, afterMinor] = uint8_t.deserialize(uint8_t, afterMajor);
+        const [patch] = uint8_t.deserialize(uint8_t, afterMinor);
         const vers = `${major}.${minor}.${patch}.${build}`;
         logger.debug(`BLZ version: ${vers}`, NS);
         this.version = {
@@ -602,7 +601,7 @@ export class Blz extends EventEmitter {
     }
 
     private waitressValidator(payload: BLZFrame, matcher: BLZWaitressMatcher): boolean {
-        const frameNames = typeof matcher.frameId == "string" ? [matcher.frameId] : FRAME_NAMES_BY_ID[matcher.frameId];
+        const frameNames = typeof matcher.frameId === "string" ? [matcher.frameId] : FRAME_NAMES_BY_ID[matcher.frameId];
         return frameNames.includes(payload.frameName);
     }
 
