@@ -1,23 +1,21 @@
 /* istanbul ignore file */
 
-import * as basic from './basic';
-import {fixed_list} from './basic';
-
-const NS = 'zh:blz:named';
+import * as basic from "./basic";
+import {fixed_list} from "./basic";
 
 export class BlzNodeId extends basic.uint16_t {}
 export class BlzEUI64 extends fixed_list(8, basic.uint8_t) {
     constructor(private _value: ArrayLike<number> | string) {
         super();
-        if (typeof _value === 'string') {
-            if (_value.startsWith('0x')) _value = _value.slice(2);
+        if (typeof _value === "string") {
+            if (_value.startsWith("0x")) _value = _value.slice(2);
             if ((_value as string).length !== 16) {
-                throw new Error('Incorrect value passed');
+                throw new Error("Incorrect value passed");
             }
-            this._value = Buffer.from(_value, 'hex');
+            this._value = Buffer.from(_value, "hex");
         } else {
             if (_value.length !== 8) {
-                throw new Error('Incorrect value passed');
+                throw new Error("Incorrect value passed");
             }
             this._value = _value;
         }
@@ -49,7 +47,7 @@ export class BlzEUI64 extends fixed_list(8, basic.uint8_t) {
 
     public toString(): string {
         /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
-        return Buffer.from(this._value as any).toString('hex');
+        return Buffer.from(this._value as any).toString("hex");
     }
 }
 export class Bool extends basic.uint8_t {
@@ -81,15 +79,15 @@ export class BlzValueId extends basic.uint8_t {
     // Binding table size
     static BLZ_VALUE_ID_BINDING_TABLE_SIZE = 0x09;
     // Max end device supported
-    static BLZ_VALUE_ID_MAX_END_DEVICE_CHILDREN = 0x0A;
+    static BLZ_VALUE_ID_MAX_END_DEVICE_CHILDREN = 0x0a;
     // Indirect message timeout value
-    static BLZ_VALUE_ID_INDIRECT_TRANSMISSION_TIMEOUT = 0x0B;
+    static BLZ_VALUE_ID_INDIRECT_TRANSMISSION_TIMEOUT = 0x0b;
     // End device timeout value
-    static BLZ_VALUE_ID_END_DEVICE_BIND_TIMEOUT = 0x0C;
+    static BLZ_VALUE_ID_END_DEVICE_BIND_TIMEOUT = 0x0c;
     // Device Unique TC Link key table size
-    static BLZ_VALUE_ID_UNIQUE_TC_LINK_KEY_TABLE_SIZE = 0x0D;
+    static BLZ_VALUE_ID_UNIQUE_TC_LINK_KEY_TABLE_SIZE = 0x0d;
     // Trust center address
-    static BLZ_VALUE_ID_TRUST_CENTER_ADDRESS = 0x0F;
+    static BLZ_VALUE_ID_TRUST_CENTER_ADDRESS = 0x0f;
     // MAC address of NCP
     static BLZ_VALUE_ID_MAC_ADDRESS = 0x20;
 }
@@ -122,7 +120,6 @@ export class BlzOutgoingMessageType extends basic.uint8_t {
 
 // Options to use when sending a message.
 export class BlzApsOption extends basic.uint16_t {
-
     // No options.
     static ZB_APS_TX_OPTIONS_NONE = 0x00;
     // Send the message using APS Encryption, using the Link Key shared with the
@@ -135,7 +132,6 @@ export class BlzApsOption extends basic.uint16_t {
     static ZB_APS_TX_OPTIONS_FRAG_PERMIT = 0x08;
     static ZB_APS_TX_OPTIONS_EXT_NONCE = 0x10;
 }
-
 
 export class BlzZDOCmd extends basic.uint16_t {
     // Device and Service Discovery Server Requests

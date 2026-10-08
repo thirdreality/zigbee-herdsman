@@ -1,21 +1,21 @@
-import {vi, describe, it, expect, beforeEach} from 'vitest';
-import * as fs from 'fs';
-import {BLZAdapterBackup} from '../../../../src/adapter/blz/adapter/backup';
-import {Driver} from '../../../../src/adapter/blz/driver/driver';
-import {BlzStatus, BlzValueId} from '../../../../src/adapter/blz/driver/types/named';
-import * as BackupUtils from '../../../../src/utils/backup';
+import * as fs from "node:fs";
+import {beforeEach, describe, expect, it, vi} from "vitest";
+import {BLZAdapterBackup} from "../../../../src/adapter/blz/adapter/backup";
+import {Driver} from "../../../../src/adapter/blz/driver/driver";
+import {BlzStatus, BlzValueId} from "../../../../src/adapter/blz/driver/types/named";
+import * as BackupUtils from "../../../../src/utils/backup";
 
-vi.mock('fs', () => ({
+vi.mock("fs", () => ({
     default: {},
     promises: {
         access: vi.fn(),
         readFile: vi.fn(),
     },
 }));
-vi.mock('../../../../src/adapter/blz/driver/driver');
-vi.mock('../../../../src/utils/backup');
+vi.mock("../../../../src/adapter/blz/driver/driver");
+vi.mock("../../../../src/utils/backup");
 
-describe('BLZ Adapter Backup', () => {
+describe("BLZ Adapter Backup", () => {
     let backup: BLZAdapterBackup;
     let driverMock: {
         blz: {
@@ -26,7 +26,7 @@ describe('BLZ Adapter Backup', () => {
         getNetworkKeyInfo: ReturnType<typeof vi.fn>;
     };
 
-    const backupPath = '/path/to/backup.json';
+    const backupPath = "/path/to/backup.json";
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -43,19 +43,20 @@ describe('BLZ Adapter Backup', () => {
         backup = new BLZAdapterBackup(driverMock as any, backupPath);
     });
 
-    describe('Creating backup', () => {
-        it('should create backup successfully', async () => {
+    describe("Creating backup", () => {
+        it("should create backup successfully", async () => {
             // Mock network parameters response
             driverMock.blz.execCommand.mockImplementation((cmd: string, params?: any) => {
-                if (cmd === 'getNetworkParameters') {
+                if (cmd === "getNetworkParameters") {
                     return Promise.resolve({
                         panId: 0x1234,
-                        extPanId: BigInt('0x0102030405060708'),
+                        extPanId: BigInt("0x0102030405060708"),
                         channel: 11,
                         channelMask: 0x800, // Channel 11
                         nwkUpdateId: 0,
                     });
-                } else if (cmd === 'getValue' && params?.valueId === BlzValueId.BLZ_VALUE_ID_MAC_ADDRESS) {
+                }
+                if (cmd === "getValue" && params?.valueId === BlzValueId.BLZ_VALUE_ID_MAC_ADDRESS) {
                     return Promise.resolve({
                         value: Buffer.from([1, 2, 3, 4, 5, 6, 7, 8]),
                     });
@@ -105,11 +106,11 @@ describe('BLZ Adapter Backup', () => {
         });
     });
 
-    describe('Loading backup', () => {
-        it('should load unified backup successfully', async () => {
+    describe("Loading backup", () => {
+        it("should load unified backup successfully", async () => {
             const mockBackupData = {
                 metadata: {
-                    format: 'zigpy/open-coordinator-backup',
+                    format: "zigpy/open-coordinator-backup",
                     version: 1,
                 },
             };
@@ -130,24 +131,24 @@ describe('BLZ Adapter Backup', () => {
             expect(result).toBe(mockParsedBackup);
         });
 
-        it('should handle missing backup file', async () => {
-            vi.mocked(fs.promises.access).mockRejectedValue(new Error('File not found'));
+        it("should handle missing backup file", async () => {
+            vi.mocked(fs.promises.access).mockRejectedValue(new Error("File not found"));
 
             const result = await backup.getStoredBackup();
             expect(result).toBeUndefined();
         });
 
-        it('should handle corrupted backup file', async () => {
+        it("should handle corrupted backup file", async () => {
             vi.mocked(fs.promises.access).mockResolvedValue(undefined);
-            vi.mocked(fs.promises.readFile).mockResolvedValue(Buffer.from('invalid json'));
+            vi.mocked(fs.promises.readFile).mockResolvedValue(Buffer.from("invalid json"));
 
-            await expect(backup.getStoredBackup()).rejects.toThrow('Coordinator backup is corrupted');
+            await expect(backup.getStoredBackup()).rejects.toThrow("Coordinator backup is corrupted");
         });
 
-        it('should handle unsupported backup version', async () => {
+        it("should handle unsupported backup version", async () => {
             const mockBackupData = {
                 metadata: {
-                    format: 'zigpy/open-coordinator-backup',
+                    format: "zigpy/open-coordinator-backup",
                     version: 2,
                 },
             };
@@ -155,10 +156,10 @@ describe('BLZ Adapter Backup', () => {
             vi.mocked(fs.promises.access).mockResolvedValue(undefined);
             vi.mocked(fs.promises.readFile).mockResolvedValue(Buffer.from(JSON.stringify(mockBackupData)));
 
-            await expect(backup.getStoredBackup()).rejects.toThrow('Unsupported open coordinator backup version');
+            await expect(backup.getStoredBackup()).rejects.toThrow("Unsupported open coordinator backup version");
         });
 
-        it('should handle unknown backup format', async () => {
+        it("should handle unknown backup format", async () => {
             const mockBackupData = {
                 someOtherFormat: true,
             };
@@ -166,7 +167,7 @@ describe('BLZ Adapter Backup', () => {
             vi.mocked(fs.promises.access).mockResolvedValue(undefined);
             vi.mocked(fs.promises.readFile).mockResolvedValue(Buffer.from(JSON.stringify(mockBackupData)));
 
-            await expect(backup.getStoredBackup()).rejects.toThrow('Unknown backup format');
+            await expect(backup.getStoredBackup()).rejects.toThrow("Unknown backup format");
         });
     });
 });

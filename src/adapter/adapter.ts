@@ -116,7 +116,9 @@ export abstract class Adapter extends events.EventEmitter<AdapterEventMap> {
                 return new EZSPAdapter(networkOptions, serialPortOptions, backupPath, adapterOptions);
             }
             default: {
-                throw new Error(`Adapter '${discovered.adapter}' does not exists, possible options: zstack, ember, deconz, zigate, zboss, zoh, blz, ezsp`);
+                throw new Error(
+                    `Adapter '${discovered.adapter}' does not exists, possible options: zstack, ember, deconz, zigate, zboss, zoh, blz, ezsp`,
+                );
             }
         }
     }

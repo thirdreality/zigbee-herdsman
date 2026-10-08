@@ -330,11 +330,11 @@ const USB_FINGERPRINTS: Record<DiscoverableUsbAdapter, UsbAdapterFingerprint[]> 
     blz: [
         {
             // Third Reality Zigbee USB Dongle BL706
-            vendorId: '1A86',
-            productId: '7523',
-            manufacturer: 'wch.cn',
+            vendorId: "1A86",
+            productId: "7523",
+            manufacturer: "wch.cn",
             // /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0
-            pathRegex: '.*USB_Serial.*',
+            pathRegex: ".*USB_Serial.*",
         },
     ],
 };

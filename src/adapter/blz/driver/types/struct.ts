@@ -1,7 +1,7 @@
 /* istanbul ignore file */
 
-import * as basic from './basic';
-import * as named from './named';
+import * as basic from "./basic";
+import * as named from "./named";
 
 export class BlzStruct {
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
@@ -49,19 +49,19 @@ export class BlzNetworkParameters extends BlzStruct {
 
     static _fields = [
         // The network's extended PAN identifier.
-        ['extendedPanId', basic.fixed_list(8, basic.uint8_t)],
+        ["extendedPanId", basic.fixed_list(8, basic.uint8_t)],
         // The network's PAN identifier.
-        ['panId', basic.uint16_t],
+        ["panId", basic.uint16_t],
         // A power setting, in dBm.
-        ['TxPower', basic.uint8_t],
+        ["TxPower", basic.uint8_t],
         // A radio channel.
-        ['Channel', basic.uint8_t],
+        ["Channel", basic.uint8_t],
         // The method used to initially join the network.
-        ['nwkManagerId', basic.uint16_t],
+        ["nwkManagerId", basic.uint16_t],
         // NWK Update ID. The value of the ZigBee nwkUpdateId known by the stack.
-        ['nwkUpdateId', basic.uint8_t],
+        ["nwkUpdateId", basic.uint8_t],
         // NWK channel mask.
-        ['channels', basic.uint32_t],
+        ["channels", basic.uint32_t],
     ];
 }
 
@@ -81,19 +81,19 @@ export class BlzApsFrame extends BlzStruct {
 
     static _fields = [
         // The application profile ID that describes the format of the message.
-        ['profileId', basic.uint16_t],
+        ["profileId", basic.uint16_t],
         // The cluster ID for this message.
-        ['clusterId', basic.uint16_t],
+        ["clusterId", basic.uint16_t],
         // The source endpoint.
-        ['sourceEndpoint', basic.uint8_t],
+        ["sourceEndpoint", basic.uint8_t],
         // The destination endpoint.
-        ['destinationEndpoint', basic.uint8_t],
+        ["destinationEndpoint", basic.uint8_t],
         // A bitmask of options.
-        ['options', named.BlzApsOption],
+        ["options", named.BlzApsOption],
         // The group ID for this message, if it is multicast mode.
-        ['groupId', basic.uint16_t],
+        ["groupId", basic.uint16_t],
         // The sequence number.
-        ['sequence', basic.uint8_t],
+        ["sequence", basic.uint8_t],
     ];
 }
 
@@ -102,24 +102,24 @@ export class BlzNeighborTableEntry extends BlzStruct {
     // links to and from neighboring nodes.
     static _fields = [
         // The neighbor's two byte network id
-        ['shortId', basic.uint16_t],
+        ["shortId", basic.uint16_t],
         // An exponentially weighted moving average of the link quality values
         // of incoming packets from this neighbor as reported by the PHY.
-        ['averageLqi', basic.uint8_t],
+        ["averageLqi", basic.uint8_t],
         // The incoming cost for this neighbor, computed from the average LQI.
         // Values range from 1 for a good link to 7 for a bad link.
-        ['inCost', basic.uint8_t],
+        ["inCost", basic.uint8_t],
         // The outgoing cost for this neighbor, obtained from the most recently
         // received neighbor exchange message from the neighbor. A value of zero
         // means that a neighbor exchange message from the neighbor has not been
         // received recently enough, or that our id was not present in the most
         // recently received one.
-        ['outCost', basic.uint8_t],
+        ["outCost", basic.uint8_t],
         // The number of aging periods elapsed since a link status message was
         // last received from this neighbor. The aging period is 16 seconds.
-        ['age', basic.uint8_t],
+        ["age", basic.uint8_t],
         // The 8 byte EUI64 of the neighbor.
-        ['longId', named.BlzEUI64],
+        ["longId", named.BlzEUI64],
     ];
 }
 
@@ -129,63 +129,63 @@ export class BlzRouteTableEntry extends BlzStruct {
     static _fields = [
         // The short id of the destination. A value of 0xFFFF indicates the
         // entry is unused.
-        ['destination', basic.uint16_t],
+        ["destination", basic.uint16_t],
         // The short id of the next hop to this destination.
-        ['nextHop', basic.uint16_t],
+        ["nextHop", basic.uint16_t],
         // Indicates whether this entry is active [0], being discovered [1]],
         // unused [3], or validating [4].
-        ['status', basic.uint8_t],
+        ["status", basic.uint8_t],
         // The number of seconds since this route entry was last used to send a
         // packet.
-        ['age', basic.uint8_t],
+        ["age", basic.uint8_t],
         // Indicates whether this destination is a High RAM Concentrator [2], a
         // Low RAM Concentrator [1], or not a concentrator [0].
-        ['concentratorType', basic.uint8_t],
+        ["concentratorType", basic.uint8_t],
         // For a High RAM Concentrator, indicates whether a route record is
         // needed [2], has been sent [1], or is no long needed [0] because a
         // source routed message from the concentrator has been received.
-        ['routeRecordState', basic.uint8_t],
+        ["routeRecordState", basic.uint8_t],
     ];
 }
 
 export class BlzNodeDescriptor extends BlzStruct {
     static _fields = [
-        ['byte1', basic.uint8_t],
-        ['byte2', basic.uint8_t],
-        ['mac_capability_flags', basic.uint8_t],
-        ['manufacturer_code', basic.uint16_t],
-        ['maximum_buffer_size', basic.uint8_t],
-        ['maximum_incoming_transfer_size', basic.uint16_t],
-        ['server_mask', basic.uint16_t],
-        ['maximum_outgoing_transfer_size', basic.uint16_t],
-        ['descriptor_capability_field', basic.uint8_t],
+        ["byte1", basic.uint8_t],
+        ["byte2", basic.uint8_t],
+        ["mac_capability_flags", basic.uint8_t],
+        ["manufacturer_code", basic.uint16_t],
+        ["maximum_buffer_size", basic.uint8_t],
+        ["maximum_incoming_transfer_size", basic.uint16_t],
+        ["server_mask", basic.uint16_t],
+        ["maximum_outgoing_transfer_size", basic.uint16_t],
+        ["descriptor_capability_field", basic.uint8_t],
     ];
 }
 
 export class BlzSimpleDescriptor extends BlzStruct {
     static _fields = [
-        ['endpoint', basic.uint8_t],
-        ['profileid', basic.uint16_t],
-        ['deviceid', basic.uint16_t],
-        ['deviceversion', basic.uint8_t],
-        ['inclusterlist', basic.LVList(basic.uint16_t)],
-        ['outclusterlist', basic.LVList(basic.uint16_t)],
+        ["endpoint", basic.uint8_t],
+        ["profileid", basic.uint16_t],
+        ["deviceid", basic.uint16_t],
+        ["deviceversion", basic.uint8_t],
+        ["inclusterlist", basic.LVList(basic.uint16_t)],
+        ["outclusterlist", basic.LVList(basic.uint16_t)],
     ];
 }
 
 export class BlzMultiAddress extends BlzStruct {
     static fields3 = [
-        ['addrmode', basic.uint8_t],
-        ['ieee', named.BlzEUI64],
-        ['endpoint', basic.uint8_t],
+        ["addrmode", basic.uint8_t],
+        ["ieee", named.BlzEUI64],
+        ["endpoint", basic.uint8_t],
     ];
     static fields1 = [
-        ['addrmode', basic.uint8_t],
-        ['nwk', named.BlzNodeId],
+        ["addrmode", basic.uint8_t],
+        ["nwk", named.BlzNodeId],
     ];
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
     static serialize(cls: any, obj: any): Buffer {
-        const addrmode = obj['addrmode'];
+        const addrmode = obj["addrmode"];
 
         const fields = addrmode == 3 ? cls.fields3 : cls.fields1;
         return Buffer.concat(
@@ -201,36 +201,36 @@ export class BlzMultiAddress extends BlzStruct {
 
 export class BlzNeighbor extends BlzStruct {
     static _fields = [
-        ['extendedpanid', basic.fixed_list(8, basic.uint8_t)],
-        ['ieee', named.BlzEUI64],
-        ['nodeid', named.BlzNodeId],
-        ['packed', basic.uint8_t],
-        ['permitjoining', basic.uint8_t],
-        ['depth', basic.uint8_t],
-        ['lqi', basic.uint8_t],
+        ["extendedpanid", basic.fixed_list(8, basic.uint8_t)],
+        ["ieee", named.BlzEUI64],
+        ["nodeid", named.BlzNodeId],
+        ["packed", basic.uint8_t],
+        ["permitjoining", basic.uint8_t],
+        ["depth", basic.uint8_t],
+        ["lqi", basic.uint8_t],
     ];
 }
 
 export class BlzNeighbors extends BlzStruct {
     static _fields = [
-        ['entries', basic.uint8_t],
-        ['startindex', basic.uint8_t],
-        ['neighbors', basic.LVList(BlzNeighbor)],
+        ["entries", basic.uint8_t],
+        ["startindex", basic.uint8_t],
+        ["neighbors", basic.LVList(BlzNeighbor)],
     ];
 }
 
 export class BlzRoutingTableEntry extends BlzStruct {
     static _fields = [
-        ['destination', basic.uint16_t],
-        ['status', basic.uint8_t],
-        ['nexthop', basic.uint16_t],
+        ["destination", basic.uint16_t],
+        ["status", basic.uint8_t],
+        ["nexthop", basic.uint16_t],
     ];
 }
 
 export class BlzRoutingTable extends BlzStruct {
     static _fields = [
-        ['entries', basic.uint8_t],
-        ['startindex', basic.uint8_t],
-        ['table', basic.LVList(BlzRoutingTableEntry)],
+        ["entries", basic.uint8_t],
+        ["startindex", basic.uint8_t],
+        ["table", basic.LVList(BlzRoutingTableEntry)],
     ];
 }

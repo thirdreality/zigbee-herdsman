@@ -7,7 +7,7 @@ export class int_t {
         if (cls._size > 8) {
             throw new Error(`Unsupported size: ${cls._size}`);
         }
-    
+
         // If value is a Buffer, convert to a number or BigInt
         if (Buffer.isBuffer(value)) {
             if (cls._size <= 6) {
@@ -18,14 +18,14 @@ export class int_t {
                 throw new Error(`Unsupported size for Buffer conversion: ${cls._size}`);
             }
         }
-    
+
         // Ensure value is a valid number or BigInt
-        if (typeof value !== 'number' && typeof value !== 'bigint') {
+        if (typeof value !== "number" && typeof value !== "bigint") {
             throw new TypeError(`Value must be a number, BigInt, or Buffer. Received: ${typeof value}`);
         }
-    
+
         const buffer = Buffer.alloc(cls._size, 0);
-    
+
         if (cls._size <= 6) {
             if (cls._signed) {
                 buffer.writeIntLE(Number(value), 0, cls._size);
@@ -33,7 +33,7 @@ export class int_t {
                 buffer.writeUIntLE(Number(value), 0, cls._size);
             }
         } else if (cls._size === 8) {
-            if (typeof value !== 'bigint') {
+            if (typeof value !== "bigint") {
                 value = BigInt(value); // Convert number to BigInt if necessary
             }
             if (cls._signed) {
@@ -42,19 +42,16 @@ export class int_t {
                 buffer.writeBigUInt64LE(value, 0);
             }
         }
-    
+
         return buffer;
     }
-    
 
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
     static deserialize(cls: any, data: Buffer): any[] {
         if (data.length < cls._size) {
-            throw new RangeError(
-                `Buffer too small. Expected at least ${cls._size} bytes, received ${data.length}`
-            );
+            throw new RangeError(`Buffer too small. Expected at least ${cls._size} bytes, received ${data.length}`);
         }
-    
+
         let value;
         if (cls._size <= 6) {
             // Use native readIntLE or readUIntLE for sizes up to 6 bytes
@@ -62,16 +59,13 @@ export class int_t {
         } else if (cls._size === 8) {
             // hotfix for 64-bit integers
             // Use BigInt for 64-bit integers
-            value = cls._signed
-                ? BigInt.asIntN(64, data.readBigInt64LE(0))
-                : BigInt.asUintN(64, data.readBigUInt64LE(0));
+            value = cls._signed ? BigInt.asIntN(64, data.readBigInt64LE(0)) : BigInt.asUintN(64, data.readBigUInt64LE(0));
         } else {
             throw new Error(`Unsupported size: ${cls._size}`);
         }
-    
+
         return [value, data.subarray(cls._size)];
     }
-    
 
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
     static valueToName(cls: any, value: any): string {
@@ -81,7 +75,7 @@ export class int_t {
                 return `${cls.name}.${prop}`;
             }
         }
-        return '';
+        return "";
     }
 
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
@@ -92,7 +86,7 @@ export class int_t {
                 return `${prop}`;
             }
         }
-        return '';
+        return "";
     }
 }
 
@@ -189,7 +183,8 @@ class _LVList extends List {
 
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
     static deserialize(cls: any, data: Buffer): any[] {
-        let item, length;
+        let item;
+        let length;
         /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
         const r: any[] = [];
         [length, data] = [data[0], data.subarray(1)];
@@ -277,7 +272,7 @@ export class Bytes {
 }
 
 export class Fixed16Bytes extends Bytes {
-    static _size = 16;  // Fixed size for this type
+    static _size = 16; // Fixed size for this type
 
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
     static serialize(cls: any, value: any): Buffer {
@@ -285,20 +280,18 @@ export class Fixed16Bytes extends Bytes {
         if (!Buffer.isBuffer(value) || value.length !== cls._size) {
             throw new Error(`Value must be a buffer with exactly ${cls._size} bytes.`);
         }
-        return Buffer.from(value);  // Simply returns the value as it should already be 16 bytes
+        return Buffer.from(value); // Simply returns the value as it should already be 16 bytes
     }
 
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
     static deserialize(cls: any, data: Buffer): any[] {
         if (data.length < cls._size) {
-            throw new RangeError(
-                `Buffer too small. Expected at least ${cls._size} bytes, received ${data.length}`
-            );
+            throw new RangeError(`Buffer too small. Expected at least ${cls._size} bytes, received ${data.length}`);
         }
 
         // Extract exactly 16 bytes
         const value = data.subarray(0, cls._size);
-        const remainder = data.subarray(cls._size);  // Remaining part of the buffer after the first 16 bytes
-        return [value, remainder];  // Returns the 16-byte buffer and the remainder
+        const remainder = data.subarray(cls._size); // Remaining part of the buffer after the first 16 bytes
+        return [value, remainder]; // Returns the 16-byte buffer and the remainder
     }
 }
