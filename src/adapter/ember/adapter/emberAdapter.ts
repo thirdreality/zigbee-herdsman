@@ -251,11 +251,11 @@ export class EmberAdapter extends Adapter {
 
     constructor(
         networkOptions: TsType.NetworkOptions,
-        serialPortOptions: TsType.SerialPortOptions,
+        transportOptions: TsType.TransportOptions,
         backupPath: string,
         adapterOptions: TsType.AdapterOptions,
     ) {
-        super(networkOptions, serialPortOptions, backupPath, adapterOptions);
+        super(networkOptions, transportOptions, backupPath, adapterOptions);
         this.hasZdoMessageOverhead = true;
         this.manufacturerID = Zcl.ManufacturerCode.SILICON_LABORATORIES;
 
@@ -279,7 +279,7 @@ export class EmberAdapter extends Adapter {
         this.queue = new Queue(this.adapterOptions.concurrent || 16); // ORed to avoid 0 (not checked in settings/queue constructor)
         this.oneWaitress = new EmberOneWaitress();
 
-        this.ezsp = new Ezsp(serialPortOptions);
+        this.ezsp = new Ezsp(this.transport);
 
         this.ezsp.on("zdoResponse", this.onZDOResponse.bind(this));
         this.ezsp.on("incomingMessage", this.onIncomingMessage.bind(this));
@@ -1727,7 +1727,7 @@ export class EmberAdapter extends Adapter {
     public waitFor(
         networkAddress: number,
         endpoint: number,
-        _frameType: Zcl.FrameType,
+        frameType: Zcl.FrameType,
         _direction: Zcl.Direction,
         transactionSequenceNumber: number | undefined,
         clusterID: number,
@@ -1748,6 +1748,7 @@ export class EmberAdapter extends Adapter {
                     groupId: 0,
                     options: EmberApsOption.NONE,
                 },
+                zclFrameType: frameType,
                 zclSequence: transactionSequenceNumber,
                 commandIdentifier,
                 defaultRspCommandId,
@@ -2055,6 +2056,7 @@ export class EmberAdapter extends Adapter {
                     {
                         target: networkAddress,
                         apsFrame,
+                        zclFrameType: zclFrame.header.frameControl.frameType,
                         zclSequence: zclFrame.header.transactionSequenceNumber,
                         commandIdentifier: commandResponseId,
                     },
@@ -2252,6 +2254,7 @@ export class EmberAdapter extends Adapter {
                     {
                         target: undefined,
                         apsFrame: apsFrame,
+                        zclFrameType: zclFrame.header.frameControl.frameType,
                         zclSequence: zclFrame.header.transactionSequenceNumber,
                         commandIdentifier: command.response,
                     },

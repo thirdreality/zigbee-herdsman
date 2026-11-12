@@ -11,11 +11,13 @@ import * as Zdo from "../../../zspec/zdo";
 import type * as ZdoTypes from "../../../zspec/zdo/definition/tstypes";
 import Adapter from "../../adapter";
 import type {ZclPayload} from "../../events";
-import type {AdapterOptions, CoordinatorVersion, NetworkOptions, NetworkParameters, SerialPortOptions, StartResult} from "../../tstype";
+import type {AdapterOptions, CoordinatorVersion, NetworkOptions, NetworkParameters, StartResult, TransportOptions} from "../../tstype";
 import {type BlzIncomingMessage, Driver} from "../driver";
 import {BlzEUI64, BlzStatus} from "../driver/types";
 
 const NS = "zh:blz";
+/** BLZ NCP UART rate, used when the configuration does not set one */
+const DEFAULT_BAUDRATE = 2000000;
 
 interface WaitressMatcher {
     address?: number | string;
@@ -30,23 +32,20 @@ export class BLZAdapter extends Adapter {
     private waitress: Waitress<ZclPayload, WaitressMatcher>;
     private interpanLock: boolean;
     private queue: Queue;
-    private closing: boolean;
 
-    public constructor(networkOptions: NetworkOptions, serialPortOptions: SerialPortOptions, backupPath: string, adapterOptions: AdapterOptions) {
-        super(networkOptions, serialPortOptions, backupPath, adapterOptions);
+    public constructor(networkOptions: NetworkOptions, transportOptions: TransportOptions, backupPath: string, adapterOptions: AdapterOptions) {
+        super(networkOptions, {...transportOptions, baudRate: transportOptions.baudRate ?? DEFAULT_BAUDRATE}, backupPath, adapterOptions);
         this.hasZdoMessageOverhead = true;
         this.manufacturerID = Zcl.ManufacturerCode.BOUFFALO_LAB_NANJING_CO_LTD;
 
         this.waitress = new Waitress<ZclPayload, WaitressMatcher>(this.waitressValidator, this.waitressTimeoutFormatter);
         this.interpanLock = false;
-        this.closing = false;
 
         const concurrent = adapterOptions?.concurrent ?? 8;
         logger.debug(`Adapter concurrent: ${concurrent}`, NS);
         this.queue = new Queue(concurrent);
 
-        this.driver = new Driver(this.serialPortOptions, this.networkOptions, backupPath);
-        this.driver.on("close", this.onDriverClose.bind(this));
+        this.driver = new Driver(this.transport, this.networkOptions, backupPath);
         this.driver.on("deviceJoined", this.handleDeviceJoin.bind(this));
         this.driver.on("deviceLeft", this.handleDeviceLeft.bind(this));
         this.driver.on("incomingMessage", this.processMessage.bind(this));
@@ -114,17 +113,8 @@ export class BLZAdapter extends Adapter {
     }
 
     public async stop(): Promise<void> {
-        this.closing = true;
         this.waitress.clear();
         await this.driver.stop();
-    }
-
-    public onDriverClose(): void {
-        logger.debug("onDriverClose()", NS);
-
-        if (!this.closing) {
-            this.emit("disconnected");
-        }
     }
 
     public getCoordinatorIEEE(): Promise<string> {

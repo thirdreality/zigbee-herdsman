@@ -3,7 +3,7 @@ import {Blz} from "../../../../src/adapter/blz/driver/blz";
 import {FRAMES} from "../../../../src/adapter/blz/driver/commands";
 import {BlzStatus, BlzValueId} from "../../../../src/adapter/blz/driver/types/named";
 import {SerialDriver} from "../../../../src/adapter/blz/driver/uart";
-import type {SerialPortOptions} from "../../../../src/adapter/tstype";
+import type {AdapterTransport} from "../../../../src/adapter/transport";
 
 vi.mock("../../../../src/adapter/blz/driver/uart");
 
@@ -41,11 +41,7 @@ describe("BLZ Driver", () => {
         removeAllListeners: ReturnType<typeof vi.fn>;
     };
 
-    const serialPortOptions: SerialPortOptions = {
-        path: "COM5",
-        baudRate: 115200,
-        rtscts: false,
-    };
+    const transport = {} as AdapterTransport;
 
     beforeEach(() => {
         vi.useFakeTimers();
@@ -60,7 +56,7 @@ describe("BLZ Driver", () => {
         };
 
         vi.mocked(SerialDriver).mockImplementation(() => serialDriverMock as unknown as SerialDriver);
-        blz = new Blz();
+        blz = new Blz(transport);
     });
 
     afterEach(() => {
@@ -72,8 +68,9 @@ describe("BLZ Driver", () => {
             serialDriverMock.connect.mockResolvedValue(undefined);
             serialDriverMock.isInitialized.mockReturnValue(true);
 
-            await blz.connect(serialPortOptions);
-            expect(serialDriverMock.connect).toHaveBeenCalledWith(serialPortOptions);
+            await blz.connect();
+            expect(SerialDriver).toHaveBeenCalledWith(transport);
+            expect(serialDriverMock.connect).toHaveBeenCalledWith();
             expect(blz.isInitialized()).toBe(true);
         });
 
@@ -86,7 +83,7 @@ describe("BLZ Driver", () => {
         //     const loggerSpy = vi.spyOn(logger, 'error');
         //     const loggerDebugSpy = vi.spyOn(logger, 'debug');
 
-        //     const connectPromise = blz.connect(serialPortOptions);
+        //     const connectPromise = blz.connect();
 
         //     // Advance time for each retry attempt and verify behavior
         //     for (let i = 1; i <= MAX_SERIAL_CONNECT_ATTEMPTS; i++) {
@@ -120,10 +117,10 @@ describe("BLZ Driver", () => {
         it("should handle disconnection", async () => {
             serialDriverMock.connect.mockResolvedValue(undefined);
             serialDriverMock.isInitialized.mockReturnValue(true);
-            await blz.connect(serialPortOptions);
+            await blz.connect();
 
-            await blz.close(true);
-            expect(serialDriverMock.close).toHaveBeenCalledWith(true);
+            await blz.close();
+            expect(serialDriverMock.close).toHaveBeenCalledWith();
         });
     });
 
@@ -131,7 +128,7 @@ describe("BLZ Driver", () => {
         beforeEach(async () => {
             serialDriverMock.connect.mockResolvedValue(undefined);
             serialDriverMock.isInitialized.mockReturnValue(true);
-            await blz.connect(serialPortOptions);
+            await blz.connect();
         });
 
         it("should get value successfully", async () => {
@@ -165,15 +162,20 @@ describe("BLZ Driver", () => {
         beforeEach(async () => {
             serialDriverMock.connect.mockResolvedValue(undefined);
             serialDriverMock.isInitialized.mockReturnValue(true);
-            await blz.connect(serialPortOptions);
+            await blz.connect();
         });
 
-        it("should handle close events", () => {
+        it("re-emits a serial reset after connecting", () => {
             const callback = vi.fn();
-            blz.on("close", callback);
+            blz.on("reset", callback);
 
-            serialDriverMock.on.mock.calls.find((call) => call[0] === "close")?.[1]();
+            // the last "reset" listener is the steady-state one; the first rejects reconnect attempts during connect()
+            serialDriverMock.on.mock.calls.findLast((call) => call[0] === "reset")?.[1]();
             expect(callback).toHaveBeenCalled();
+        });
+
+        it("leaves close reporting to the adapter transport", () => {
+            expect(serialDriverMock.on.mock.calls.some((call) => call[0] === "close")).toBe(false);
         });
     });
 });

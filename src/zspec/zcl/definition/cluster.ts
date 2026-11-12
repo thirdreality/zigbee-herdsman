@@ -7321,6 +7321,20 @@ export const Clusters: Readonly<Record<ClusterName, Cluster>> = {
                     {name: "dpValues", type: BuffaloZclDataType.LIST_TUYA_DATAPOINT_VALUES},
                 ],
             },
+            /**
+             * FIXME: Not listed in the Tuya zigbee cluster description either, but some
+             *  newer `_TZE284_` devices (e.g. the 4-gang LCD control panels) report their
+             *  datapoints with command 0x0A instead of 0x02. The payload is identical to
+             *  `dataReport`, so it is parsed the same way.
+             */
+            dataReportAlt: {
+                name: "dataReportAlt",
+                ID: 0x0a,
+                parameters: [
+                    {name: "seq", type: DataType.UINT16, max: 0xffff},
+                    {name: "dpValues", type: BuffaloZclDataType.LIST_TUYA_DATAPOINT_VALUES},
+                ],
+            },
             /** Report / reply to mcuVersionRequest */
             mcuVersionResponse: {
                 name: "mcuVersionResponse",
@@ -7340,7 +7354,7 @@ export const Clusters: Readonly<Record<ClusterName, Cluster>> = {
                     {name: "key_lo", type: DataType.UINT32, max: 0xffffffff},
                     {name: "version", type: DataType.UINT8, max: 0xff},
                     {name: "offset", type: DataType.UINT32, max: 0xffffffff},
-                    {name: "size", type: DataType.UINT32, max: 0xffffffff},
+                    {name: "size", type: DataType.UINT8, max: 0xff},
                 ],
             },
             /** End update. Replying to last mcuOtaBlockDataResponse */

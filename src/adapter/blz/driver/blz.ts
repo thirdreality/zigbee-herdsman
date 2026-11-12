@@ -5,7 +5,7 @@ import {EventEmitter} from "node:events";
 
 import {Queue, Waitress, wait} from "../../../utils";
 import {logger} from "../../../utils/logger";
-import type {SerialPortOptions} from "../../tstype";
+import type {AdapterTransport} from "../../transport";
 import {
     type BLZFrameDesc,
     FRAME_NAMES_BY_ID,
@@ -255,14 +255,13 @@ export class Blz extends EventEmitter {
         build: string;
     };
 
-    constructor() {
+    constructor(transport: AdapterTransport) {
         super();
         this.queue = new Queue();
         this.waitress = new Waitress<BLZFrame, BLZWaitressMatcher>(this.waitressValidator, this.waitressTimeoutFormatter);
 
-        this.serialDriver = new SerialDriver();
+        this.serialDriver = new SerialDriver(transport);
         this.serialDriver.on("received", this.onFrameReceived.bind(this));
-        this.serialDriver.on("close", this.onSerialClose.bind(this));
         this.version = {
             product: 1,
             major: "0",
@@ -272,7 +271,7 @@ export class Blz extends EventEmitter {
         };
     }
 
-    public async connect(options: SerialPortOptions): Promise<void> {
+    public async connect(): Promise<void> {
         let lastError: Error | null = null;
         let connected = false;
 
@@ -284,7 +283,7 @@ export class Blz extends EventEmitter {
         for (let i = 1; i <= MAX_SERIAL_CONNECT_ATTEMPTS; i++) {
             try {
                 logger.debug(`Attempting connection (attempt ${i}/${MAX_SERIAL_CONNECT_ATTEMPTS})`, NS);
-                await this.serialDriver.connect(options);
+                await this.serialDriver.connect();
 
                 // Verify connection is actually established
                 if (this.serialDriver.isInitialized()) {
@@ -334,19 +333,12 @@ export class Blz extends EventEmitter {
         this.emit("reset");
     }
 
-    private onSerialClose(): void {
-        logger.debug("onSerialClose()", NS);
-        if (!this.inResetingProcess) {
-            this.emit("close");
-        }
-    }
-
     public setResetingProcess(value: boolean): void {
         logger.debug(`Setting inResetingProcess to ${value}`, NS);
         this.inResetingProcess = value;
     }
 
-    public async close(emitClose: boolean): Promise<void> {
+    public async close(): Promise<void> {
         logger.debug("Closing Blz", NS);
 
         clearInterval(this.watchdogTimer);
@@ -354,7 +346,7 @@ export class Blz extends EventEmitter {
         this.queue.clear();
         this.waitress.clear();
         this.serialDriver.removeAllListeners();
-        await this.serialDriver.close(emitClose);
+        await this.serialDriver.close();
     }
 
     /**

@@ -3,7 +3,7 @@ import {BLZAdapter} from "../../../../src/adapter/blz/adapter/blzAdapter";
 import {Driver} from "../../../../src/adapter/blz/driver/driver";
 import {BlzStatus} from "../../../../src/adapter/blz/driver/types/named";
 import {BlzApsFrame} from "../../../../src/adapter/blz/driver/types/struct";
-import type {AdapterOptions, NetworkOptions, SerialPortOptions} from "../../../../src/adapter/tstype";
+import type {AdapterOptions, NetworkOptions, TransportOptions} from "../../../../src/adapter/tstype";
 import * as ZSpec from "../../../../src/zspec";
 import * as Zdo from "../../../../src/zspec/zdo";
 
@@ -51,7 +51,7 @@ describe("BLZ Adapter", () => {
         channelList: [11],
     };
 
-    const serialPortOptions: SerialPortOptions = {
+    const transportOptions: TransportOptions = {
         path: "COM5",
         baudRate: 2000000,
         rtscts: false,
@@ -98,7 +98,7 @@ describe("BLZ Adapter", () => {
         };
 
         vi.mocked(Driver).mockImplementation(() => driverMock as unknown as Driver);
-        adapter = new BLZAdapter(networkOptions, serialPortOptions, "/path/to/backup", adapterOptions);
+        adapter = new BLZAdapter(networkOptions, transportOptions, "/path/to/backup", adapterOptions);
     });
 
     describe("Startup and initialization", () => {
@@ -291,12 +291,31 @@ describe("BLZ Adapter", () => {
             await expect(adapter.setChannelInterPAN(11)).rejects.toThrow("Not supported");
         });
 
-        it("should handle driver close", () => {
+        it("reports disconnected when the transport closes unexpectedly", () => {
             const callback = vi.fn();
             adapter.on("disconnected", callback);
 
-            driverMock.on.mock.calls.find((call) => call[0] === "close")?.[1]();
+            adapter.transport.emit("close", new Error("unplugged"));
             expect(callback).toHaveBeenCalled();
+        });
+    });
+
+    describe("Transport", () => {
+        it("hands the shared transport to the driver", () => {
+            expect(Driver).toHaveBeenLastCalledWith(adapter.transport, networkOptions, "/path/to/backup");
+        });
+
+        it("keeps a configured baud rate", () => {
+            expect(adapter.transport.options.baudRate).toBe(2000000);
+
+            const custom = new BLZAdapter(networkOptions, {path: "COM5", baudRate: 115200}, "/path/to/backup", adapterOptions);
+            expect(custom.transport.options.baudRate).toBe(115200);
+        });
+
+        it("defaults to the BLZ baud rate", () => {
+            const defaulted = new BLZAdapter(networkOptions, {path: "COM5"}, "/path/to/backup", adapterOptions);
+            expect(defaulted.transport.options.baudRate).toBe(2000000);
+            expect(defaulted.transport.options.path).toBe("COM5");
         });
     });
 });

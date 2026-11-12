@@ -11,7 +11,7 @@ import * as Zdo from "../../../zspec/zdo";
 import type * as ZdoTypes from "../../../zspec/zdo/definition/tstypes";
 import Adapter, {type ClusterWaitressMatcher, type ZclWaitressPayload} from "../../adapter";
 import type * as Events from "../../events";
-import type {AdapterOptions, CoordinatorVersion, NetworkOptions, NetworkParameters, SerialPortOptions, StartResult} from "../../tstype";
+import type {AdapterOptions, CoordinatorVersion, NetworkOptions, NetworkParameters, StartResult, TransportOptions} from "../../tstype";
 import * as Constants from "../constants";
 import {Constants as UnpiConstants} from "../unpi";
 import {Znp, type ZpiObject} from "../znp";
@@ -53,7 +53,6 @@ export class ZStackAdapter extends Adapter {
         maintrel: number;
         revision: string;
     };
-    private closing: boolean;
     // @ts-expect-error initialized in `start`
     private queue: Queue;
     private supportsLED?: boolean;
@@ -61,22 +60,19 @@ export class ZStackAdapter extends Adapter {
     private interpanEndpointRegistered: boolean;
     private waitress: Waitress<ZclWaitressPayload, ClusterWaitressMatcher>;
 
-    public constructor(networkOptions: NetworkOptions, serialPortOptions: SerialPortOptions, backupPath: string, adapterOptions: AdapterOptions) {
-        super(networkOptions, serialPortOptions, backupPath, adapterOptions);
+    public constructor(networkOptions: NetworkOptions, transportOptions: TransportOptions, backupPath: string, adapterOptions: AdapterOptions) {
+        super(networkOptions, transportOptions, backupPath, adapterOptions);
         this.hasZdoMessageOverhead = false;
         this.manufacturerID = Zcl.ManufacturerCode.TEXAS_INSTRUMENTS;
-        // biome-ignore lint/style/noNonNullAssertion: ignored using `--suppress`
-        this.znp = new Znp(this.serialPortOptions.path!, this.serialPortOptions.baudRate!, this.serialPortOptions.rtscts!);
+        this.znp = new Znp(this.transport);
 
         this.transactionID = 0;
         this.deviceAnnounceRouteDiscoveryDebouncers = new Map();
         this.interpanLock = false;
         this.interpanEndpointRegistered = false;
-        this.closing = false;
         this.waitress = new Waitress(Adapter.zclWaitressValidator, Adapter.clusterWaitressTimeoutFormatter);
 
         this.znp.on("received", this.onZnpRecieved.bind(this));
-        this.znp.on("close", this.onZnpClose.bind(this));
     }
 
     /**
@@ -136,7 +132,6 @@ export class ZStackAdapter extends Adapter {
     }
 
     public async stop(): Promise<void> {
-        this.closing = true;
         await this.znp.close();
     }
 
@@ -515,6 +510,7 @@ export class ZStackAdapter extends Adapter {
             response = this.waitForInternal(
                 networkAddress,
                 endpoint,
+                zclFrame.header.frameControl.frameType,
                 zclFrame.header.transactionSequenceNumber,
                 zclFrame.cluster.ID,
                 command.response,
@@ -525,6 +521,7 @@ export class ZStackAdapter extends Adapter {
             response = this.waitForInternal(
                 networkAddress,
                 endpoint,
+                zclFrame.header.frameControl.frameType, // waitress automatically matches on defaultRsp no matter what
                 zclFrame.header.transactionSequenceNumber,
                 zclFrame.cluster.ID,
                 Zcl.Foundation.defaultRsp.ID,
@@ -813,12 +810,6 @@ export class ZStackAdapter extends Adapter {
     /**
      * Event handlers
      */
-    public onZnpClose(): void {
-        if (!this.closing) {
-            this.emit("disconnected");
-        }
-    }
-
     private onZnpRecieved(object: ZpiObject): void {
         if (object.type !== UnpiConstants.Type.AREQ) {
             return;
@@ -1067,7 +1058,16 @@ export class ZStackAdapter extends Adapter {
             let response: ReturnType<typeof this.waitForInternal> | undefined;
 
             if (!disableResponse && command.response !== undefined) {
-                response = this.waitForInternal(undefined, 0xfe, undefined, zclFrame.cluster.ID, command.response, undefined, timeout);
+                response = this.waitForInternal(
+                    undefined,
+                    0xfe,
+                    zclFrame.header.frameControl.frameType,
+                    undefined,
+                    zclFrame.cluster.ID,
+                    command.response,
+                    undefined,
+                    timeout,
+                );
             }
 
             try {
@@ -1106,13 +1106,14 @@ export class ZStackAdapter extends Adapter {
     private waitForInternal(
         networkAddress: number | undefined,
         endpoint: number,
+        frameType: Zcl.FrameType,
         transactionSequenceNumber: number | undefined,
         clusterId: number,
         commandId: number,
         defaultRspCommandId: number | undefined,
         timeout: number,
     ): {start: () => {promise: Promise<Events.ZclPayload>}; cancel: () => void} {
-        const payload = {address: networkAddress, endpoint, clusterId, commandId, defaultRspCommandId, transactionSequenceNumber};
+        const payload = {address: networkAddress, endpoint, frameType, clusterId, commandId, defaultRspCommandId, transactionSequenceNumber};
 
         const waiter = this.waitress.waitFor(payload, timeout);
         const cancel = (): void => this.waitress.remove(waiter.ID);
@@ -1122,7 +1123,7 @@ export class ZStackAdapter extends Adapter {
     public waitFor(
         networkAddress: number,
         endpoint: number,
-        _frameType: Zcl.FrameType,
+        frameType: Zcl.FrameType,
         _direction: Zcl.Direction,
         transactionSequenceNumber: number | undefined,
         clusterId: number,
@@ -1130,7 +1131,16 @@ export class ZStackAdapter extends Adapter {
         defaultRspCommandId: number | undefined,
         timeout: number,
     ): {promise: Promise<Events.ZclPayload>; cancel: () => void} {
-        const waiter = this.waitForInternal(networkAddress, endpoint, transactionSequenceNumber, clusterId, commandId, defaultRspCommandId, timeout);
+        const waiter = this.waitForInternal(
+            networkAddress,
+            endpoint,
+            frameType,
+            transactionSequenceNumber,
+            clusterId,
+            commandId,
+            defaultRspCommandId,
+            timeout,
+        );
 
         return {cancel: waiter.cancel, promise: waiter.start().promise};
     }

@@ -7,6 +7,7 @@ import {Waitress, wait} from "../../../utils";
 import {logger} from "../../../utils/logger";
 import * as Zdo from "../../../zspec/zdo";
 import type {GenericZdoResponse} from "../../../zspec/zdo/definition/tstypes";
+import type {AdapterTransport} from "../../transport";
 import type * as TsType from "./../../tstype";
 import {BLZAdapterBackup} from "../adapter/backup";
 import {type BLZFrameData, Blz} from "./blz";
@@ -63,13 +64,13 @@ export class Driver extends EventEmitter {
     public ieee: BlzEUI64;
     private waitress: Waitress<BlzFrame, BlzWaitressMatcher>;
     private transactionID = 1;
-    private serialOpt: TsType.SerialPortOptions;
+    private readonly transport: AdapterTransport;
     public backupMan: BLZAdapterBackup;
 
-    constructor(serialOpt: TsType.SerialPortOptions, nwkOpt: TsType.NetworkOptions, backupPath: string) {
+    constructor(transport: AdapterTransport, nwkOpt: TsType.NetworkOptions, backupPath: string) {
         super();
         this.nwkOpt = nwkOpt;
-        this.serialOpt = serialOpt;
+        this.transport = transport;
         this.waitress = new Waitress<BlzFrame, BlzWaitressMatcher>(this.waitressValidator, this.waitressTimeoutFormatter);
         this.backupMan = new BLZAdapterBackup(this, backupPath);
     }
@@ -118,8 +119,7 @@ export class Driver extends EventEmitter {
             }
 
             await wait(2000);
-            // don't emit 'close' on stop since we don't want this to bubble back up as 'disconnected' to the controller.
-            await this.stop(false);
+            await this.stop();
         } catch (err) {
             logger.debug(`Stop error ${err}`, NS);
         }
@@ -136,7 +136,6 @@ export class Driver extends EventEmitter {
             // Clear reset state on error
 
             try {
-                // here we let emit
                 await this.stop();
             } catch (stopErr) {
                 logger.debug(`Failed to stop after failed reset ${stopErr}`, NS);
@@ -149,17 +148,12 @@ export class Driver extends EventEmitter {
         await this.reset();
     }
 
-    private onBlzClose(): void {
-        logger.debug("onBlzClose()", NS);
-        this.emit("close");
-    }
-
-    public async stop(emitClose = true): Promise<void> {
+    public async stop(): Promise<void> {
         logger.debug("Stopping driver", NS);
 
         if (this.blz) {
             this.blz.removeAllListeners();
-            await this.blz.close(emitClose);
+            await this.blz.close();
         }
 
         // Clear pending waiters to avoid dangling promises/timers
@@ -169,11 +163,10 @@ export class Driver extends EventEmitter {
     public async startup(): Promise<TsType.StartResult> {
         let result: TsType.StartResult = "resumed";
         this.transactionID = 1;
-        this.blz = new Blz();
-        this.blz.on("close", this.onBlzClose.bind(this));
+        this.blz = new Blz(this.transport);
 
         try {
-            await this.blz.connect(this.serialOpt);
+            await this.blz.connect();
         } catch (error) {
             logger.debug(`BLZ could not connect: ${error}`, NS);
             throw error;

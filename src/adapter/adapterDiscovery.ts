@@ -1,12 +1,11 @@
 import assert from "node:assert";
 import {platform} from "node:os";
-import type {PortInfo} from "@serialport/bindings-cpp";
+import {autoDetect as autoDetectSerialPorts, type PortInfo} from "@serialport/bindings-cpp";
 import {Bonjour} from "bonjour-service";
 import type {Service} from "bonjour-service/dist/lib/service";
 import {wait} from "../utils";
 import {logger} from "../utils/logger";
 import type {TsType} from ".";
-import {SerialPort} from "./serialPort";
 import type {Adapter, DiscoverableUsbAdapter, UsbAdapterFingerprint} from "./tstype";
 
 const NS = "zh:adapter:discovery";
@@ -208,6 +207,14 @@ const USB_FINGERPRINTS: Record<DiscoverableUsbAdapter, UsbAdapterFingerprint[]> 
             pathRegex: ".*slae\\.sh_cc2652rb.*",
         },
         {
+            // SONOFF Dongle-MP10 (CC2674P10)
+            vendorId: "303a",
+            productId: "4001",
+            manufacturer: "SONOFF",
+            // /dev/serial/by-id/usb-SONOFF_SONOFF_Dongle_Max_CC2674P10_sonoff_dongle_mp10-80B54EDBBD8C-if00
+            pathRegex: ".*sonoff.*max.*cc2674p10.*",
+        },
+        {
             // SONOFF Dongle-PP10 (CC2674P10)
             vendorId: "10c4",
             productId: "ea60",
@@ -343,7 +350,7 @@ const USB_FINGERPRINTS: Record<DiscoverableUsbAdapter, UsbAdapterFingerprint[]> 
 const MDNS_SCAN_TIME = 2000;
 
 async function getSerialPortList(): Promise<PortInfo[]> {
-    const portInfos = await SerialPort.list();
+    const portInfos = await autoDetectSerialPorts().list();
 
     // TODO: can sorting be removed in favor of `path` regex matching?
 
@@ -532,7 +539,7 @@ export function findUsbAdapterBestMatch(
     return bestMatch;
 }
 
-export async function findUsbAdapter(adapter?: Adapter, path?: string): Promise<TsType.SerialPortOptions | undefined> {
+export async function findUsbAdapter(adapter?: Adapter, path?: string): Promise<TsType.TransportOptions | undefined> {
     const isWindows = platform() === "win32";
     // refine to DiscoverableUSBAdapter
     adapter = adapter && adapter === "ezsp" ? "ember" : adapter;
@@ -581,7 +588,7 @@ function getMdnsRadioAdapter(radio: string): Adapter {
     }
 }
 
-export async function findMdnsAdapter(path: string): Promise<TsType.SerialPortOptions> {
+export async function findMdnsAdapter(path: string): Promise<TsType.TransportOptions> {
     const mdnsDevice = path.substring(7);
 
     if (mdnsDevice.length === 0) {
@@ -624,7 +631,7 @@ export async function findMdnsAdapter(path: string): Promise<TsType.SerialPortOp
     });
 }
 
-export function findTcpAdapter(path: string, adapter?: Adapter): TsType.SerialPortOptions {
+export function findTcpAdapter(path: string, adapter?: Adapter): TsType.TransportOptions {
     try {
         const url = new URL(path);
         assert(url.port !== "");
@@ -654,7 +661,7 @@ export function findTcpAdapter(path: string, adapter?: Adapter): TsType.SerialPo
  * @returns adapter An adapter type supported by Z2M. While result is TS-typed, this should be validated against actual values before use.
  * @returns path Path to adapter.
  */
-export async function discoverAdapter(adapter?: Adapter, path?: string): Promise<TsType.SerialPortOptions> {
+export async function discoverAdapter(adapter?: Adapter, path?: string): Promise<TsType.TransportOptions> {
     if (path) {
         if (path.startsWith("mdns://")) {
             return await findMdnsAdapter(path);
@@ -665,7 +672,7 @@ export async function discoverAdapter(adapter?: Adapter, path?: string): Promise
         }
 
         if (adapter) {
-            const result: TsType.SerialPortOptions = {adapter, path};
+            const result: TsType.TransportOptions = {adapter, path};
             try {
                 const matched = await matchUsbAdapter(adapter, path);
 
@@ -698,7 +705,7 @@ export async function discoverAdapter(adapter?: Adapter, path?: string): Promise
     }
 }
 
-type AllDevices = (TsType.SerialPortOptions & {name: string; path: string})[];
+type AllDevices = (TsType.TransportOptions & {name: string; path: string})[];
 
 /**
  * @returns List of all serial and mDNS devices found, with matching `adapter` if available

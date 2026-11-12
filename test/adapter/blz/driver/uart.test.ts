@@ -1,12 +1,12 @@
+import {EventEmitter} from "node:events";
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {Frame} from "../../../../src/adapter/blz/driver/frame";
 import {Parser} from "../../../../src/adapter/blz/driver/parser";
 import {SerialDriver} from "../../../../src/adapter/blz/driver/uart";
 import {Writer} from "../../../../src/adapter/blz/driver/writer";
-import {SerialPort} from "../../../../src/adapter/serialPort";
-import type {SerialPortOptions} from "../../../../src/adapter/tstype";
+import type {AdapterTransport} from "../../../../src/adapter/transport";
+import type {TransportOptions} from "../../../../src/adapter/tstype";
 
-vi.mock("../../../../src/adapter/serialPort");
 vi.mock("../../../../src/adapter/blz/driver/parser");
 vi.mock("../../../../src/adapter/blz/driver/writer");
 
@@ -27,34 +27,34 @@ vi.mock("../../../../src/adapter/blz/driver/frame", () => {
     };
 });
 
-describe("BLZ Serial Driver", () => {
-    let driver: SerialDriver;
-    let serialPortMock: {
-        asyncOpen: ReturnType<typeof vi.fn>;
-        asyncFlushAndClose: ReturnType<typeof vi.fn>;
-        pipe: ReturnType<typeof vi.fn>;
-        once: ReturnType<typeof vi.fn>;
-        on: ReturnType<typeof vi.fn>;
-        isOpen: boolean;
-    };
-    let parserMock: {
-        on: ReturnType<typeof vi.fn>;
-        reset: ReturnType<typeof vi.fn>;
-        removeAllListeners: ReturnType<typeof vi.fn>;
-    };
-    let writerMock: {
-        pipe: ReturnType<typeof vi.fn>;
-        unpipe: ReturnType<typeof vi.fn>;
-        sendACK: ReturnType<typeof vi.fn>;
-        sendReset: ReturnType<typeof vi.fn>;
-        sendData: ReturnType<typeof vi.fn>;
-    };
+class FakeTransport extends EventEmitter {
+    options: TransportOptions = {path: "/dev/ttyUSB0", baudRate: 2000000, rtscts: false};
+    isSerial = true;
+    open = vi.fn((_noFlowCtrl?: boolean) => Promise.resolve());
+    close = vi.fn(() => Promise.resolve());
+    write = vi.fn((_data: Buffer) => true);
+}
 
-    const serialPortOptions: SerialPortOptions = {
-        path: "/dev/ttyUSB0",
-        baudRate: 115200,
-        rtscts: false,
-    };
+type ParserMock = {
+    on: ReturnType<typeof vi.fn>;
+    reset: ReturnType<typeof vi.fn>;
+    write: ReturnType<typeof vi.fn>;
+};
+
+type WriterMock = {
+    on: ReturnType<typeof vi.fn>;
+    sendACK: ReturnType<typeof vi.fn>;
+    sendReset: ReturnType<typeof vi.fn>;
+    sendData: ReturnType<typeof vi.fn>;
+};
+
+describe("BLZ Serial Driver", () => {
+    let transport: FakeTransport;
+    let driver: SerialDriver;
+    let parsers: ParserMock[];
+    let writers: WriterMock[];
+    let parserMock: ParserMock;
+    let writerMock: WriterMock;
 
     function createFrame(frameId: number, sequence: number, control: number, payload?: Buffer): Frame {
         const headerLength = 4; // control + sequence + frameId
@@ -78,86 +78,121 @@ describe("BLZ Serial Driver", () => {
     }
 
     beforeEach(() => {
-        serialPortMock = {
-            asyncOpen: vi.fn(),
-            asyncFlushAndClose: vi.fn(),
-            pipe: vi.fn(),
-            unpipe: vi.fn(),
-            once: vi.fn(),
-            on: vi.fn(),
-            destroy: vi.fn(),
-            isOpen: true,
-        };
+        parsers = [];
+        writers = [];
+        vi.mocked(Parser).mockImplementation(() => {
+            const parser: ParserMock = {on: vi.fn(), reset: vi.fn(), write: vi.fn()};
+            parsers.push(parser);
+            return parser as unknown as Parser;
+        });
+        vi.mocked(Writer).mockImplementation(() => {
+            const writer: WriterMock = {on: vi.fn(), sendACK: vi.fn(), sendReset: vi.fn(), sendData: vi.fn()};
+            writers.push(writer);
+            return writer as unknown as Writer;
+        });
 
-        parserMock = {
-            on: vi.fn(),
-            reset: vi.fn(),
-            removeAllListeners: vi.fn(),
-        };
-
-        writerMock = {
-            pipe: vi.fn(),
-            unpipe: vi.fn(),
-            sendACK: vi.fn(),
-            sendReset: vi.fn(),
-            sendData: vi.fn(),
-        };
-
-        vi.mocked(SerialPort).mockImplementation(() => serialPortMock as unknown as SerialPort);
-        vi.mocked(Parser).mockImplementation(() => parserMock as unknown as Parser);
-        vi.mocked(Writer).mockImplementation(() => writerMock as unknown as Writer);
-
-        driver = new SerialDriver();
+        transport = new FakeTransport();
+        driver = new SerialDriver(transport as unknown as AdapterTransport);
+        parserMock = parsers[0];
+        writerMock = writers[0];
     });
 
     describe("Connection", () => {
         it("rejects a missing serial path before opening hardware", async () => {
-            await expect(driver.connect({...serialPortOptions, path: undefined})).rejects.toThrow("BLZ serial port path is required");
-            expect(serialPortMock.asyncOpen).not.toHaveBeenCalled();
+            transport.options = {...transport.options, path: undefined};
+
+            await expect(driver.connect()).rejects.toThrow("BLZ serial port path is required");
+            expect(transport.open).not.toHaveBeenCalled();
         });
 
-        it("should connect successfully", async () => {
-            serialPortMock.asyncOpen.mockResolvedValue(undefined);
+        it("opens the transport without software flow control", async () => {
+            await driver.connect();
 
-            await driver.connect(serialPortOptions);
+            expect(transport.open).toHaveBeenCalledWith(true);
+            expect(writerMock.sendReset).not.toHaveBeenCalled();
+            expect(driver.isInitialized()).toBe(true);
+            expect(transport.listenerCount("data")).toBe(1);
+            expect(transport.listenerCount("close")).toBe(1);
+        });
 
-            expect(SerialPort).toHaveBeenCalledWith({
-                path: serialPortOptions.path,
-                baudRate: serialPortOptions.baudRate,
-                rtscts: serialPortOptions.rtscts,
-                autoOpen: false,
-                parity: "none",
-                stopBits: 1,
-                xon: false,
-                xoff: false,
-            });
-            expect(serialPortMock.asyncOpen).toHaveBeenCalled();
+        it("sends a UART reset after opening a TCP transport", async () => {
+            transport.isSerial = false;
+
+            await driver.connect();
+
+            expect(writerMock.sendReset).toHaveBeenCalledWith(0, 0);
             expect(driver.isInitialized()).toBe(true);
         });
 
-        it("should handle connection failure", async () => {
-            serialPortMock.asyncOpen.mockRejectedValue(new Error("Connection failed"));
+        it("closes the transport and detaches when opening fails", async () => {
+            transport.open.mockRejectedValueOnce(new Error("Connection failed"));
 
-            await expect(driver.connect(serialPortOptions)).rejects.toThrow("Connection failed");
+            await expect(driver.connect()).rejects.toThrow("Connection failed");
             expect(driver.isInitialized()).toBe(false);
+            expect(transport.close).toHaveBeenCalled();
+            expect(transport.listenerCount("data")).toBe(0);
         });
 
-        it("should handle disconnection", async () => {
-            serialPortMock.asyncOpen.mockResolvedValue(undefined);
-            serialPortMock.asyncFlushAndClose.mockResolvedValue(undefined);
+        it("does not stack transport listeners when connecting again", async () => {
+            await driver.connect();
+            await driver.connect();
 
-            await driver.connect(serialPortOptions);
-            await driver.close(true);
+            expect(transport.listenerCount("data")).toBe(1);
+            expect(transport.listenerCount("close")).toBe(1);
+        });
 
-            expect(serialPortMock.asyncFlushAndClose).toHaveBeenCalled();
+        it("closes the transport and detaches on close", async () => {
+            await driver.connect();
+            await driver.close();
+
+            expect(transport.close).toHaveBeenCalled();
             expect(driver.isInitialized()).toBe(false);
+            expect(transport.listenerCount("data")).toBe(0);
+            expect(transport.listenerCount("close")).toBe(0);
+        });
+
+        it("stops feeding a closed driver once a new driver takes over the transport", async () => {
+            await driver.connect();
+            await driver.close();
+
+            const next = new SerialDriver(transport as unknown as AdapterTransport);
+            await next.connect();
+            transport.emit("data", Buffer.from([0x42, 0x4c]));
+
+            expect(parsers[0].write).not.toHaveBeenCalled();
+            expect(parsers[1].write).toHaveBeenCalledWith(Buffer.from([0x42, 0x4c]));
+        });
+    });
+
+    describe("Transport data", () => {
+        beforeEach(async () => {
+            await driver.connect();
+        });
+
+        it("feeds received bytes to the parser", () => {
+            transport.emit("data", Buffer.from([1, 2, 3]));
+
+            expect(parserMock.write).toHaveBeenCalledWith(Buffer.from([1, 2, 3]));
+        });
+
+        it("writes encoded frames to the transport", () => {
+            writerMock.on.mock.calls.find((call) => call[0] === "data")?.[1](Buffer.from([0x42, 0x4c]));
+
+            expect(transport.write).toHaveBeenCalledWith(Buffer.from([0x42, 0x4c]));
+        });
+
+        it("logs instead of throwing when the transport rejects a write", () => {
+            transport.write.mockImplementationOnce(() => {
+                throw new Error("Cannot write while transport is closed");
+            });
+
+            expect(() => writerMock.on.mock.calls.find((call) => call[0] === "data")?.[1](Buffer.from([0x42]))).not.toThrow();
         });
     });
 
     describe("Frame handling", () => {
         beforeEach(async () => {
-            serialPortMock.asyncOpen.mockResolvedValue(undefined);
-            await driver.connect(serialPortOptions);
+            await driver.connect();
         });
 
         it("should handle DATA frames", () => {
@@ -204,8 +239,7 @@ describe("BLZ Serial Driver", () => {
 
     describe("Data sending", () => {
         beforeEach(async () => {
-            serialPortMock.asyncOpen.mockResolvedValue(undefined);
-            await driver.connect(serialPortOptions);
+            await driver.connect();
         });
 
         it("should send data successfully", async () => {
@@ -242,41 +276,27 @@ describe("BLZ Serial Driver", () => {
         });
     });
 
-    describe("Error handling", () => {
+    describe("Transport close", () => {
         beforeEach(async () => {
-            serialPortMock.asyncOpen.mockResolvedValue(undefined);
-            await driver.connect(serialPortOptions);
+            await driver.connect();
         });
 
-        it("should handle port errors", () => {
+        it("requests a reset when the transport closes with an error", () => {
             const callback = vi.fn();
             driver.on("reset", callback);
 
-            // Trigger error event synchronously
-            serialPortMock.on.mock.calls.find((call) => call[0] === "error")?.[1](new Error("Port error"));
+            transport.emit("close", new Error("Close error"));
 
-            // Port errors are just logged
+            expect(callback).toHaveBeenCalled();
+        });
+
+        it("marks the driver uninitialized on a clean close", () => {
+            const callback = vi.fn();
+            driver.on("reset", callback);
+
+            transport.emit("close", false);
+
             expect(callback).not.toHaveBeenCalled();
-        });
-
-        it("should handle port close with error", () => {
-            const callback = vi.fn();
-            driver.on("reset", callback);
-
-            // Trigger close event synchronously
-            serialPortMock.once.mock.calls.find((call) => call[0] === "close")?.[1](new Error("Close error"));
-
-            expect(callback).toHaveBeenCalled();
-        });
-
-        it("should handle normal port close", () => {
-            const callback = vi.fn();
-            driver.on("close", callback);
-
-            // Trigger close event synchronously
-            serialPortMock.once.mock.calls.find((call) => call[0] === "close")?.[1](false);
-
-            expect(callback).toHaveBeenCalled();
             expect(driver.isInitialized()).toBe(false);
         });
     });

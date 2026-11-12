@@ -2,13 +2,10 @@
 
 import assert from "node:assert";
 import {EventEmitter} from "node:events";
-import net from "node:net";
 
 import {Queue, Waitress, wait} from "../../../utils";
 import {logger} from "../../../utils/logger";
-import {SerialPort} from "../../serialPort";
-import type {SerialPortOptions} from "../../tstype";
-import {isTcpPath, parseTcpPath} from "../../utils";
+import type {AdapterTransport} from "../../transport";
 import {FRAMES} from "./commands";
 import type {Frame} from "./frame";
 import {Parser} from "./parser";
@@ -25,8 +22,7 @@ type BLZPacketMatcher = {
 };
 
 export class SerialDriver extends EventEmitter {
-    private serialPort?: SerialPort;
-    private socketPort?: net.Socket;
+    private readonly transport: AdapterTransport;
     private writer: Writer;
     private parser: Parser;
     private initialized: boolean;
@@ -36,109 +32,76 @@ export class SerialDriver extends EventEmitter {
     private waitress: Waitress<BLZPacket, BLZPacketMatcher>;
     private queue: Queue;
 
-    constructor() {
+    constructor(transport: AdapterTransport) {
         super();
+        this.transport = transport;
         this.initialized = false;
         this.queue = new Queue(1);
         this.waitress = new Waitress<BLZPacket, BLZPacketMatcher>(this.waitressValidator, this.waitressTimeoutFormatter);
         this.writer = new Writer();
         this.parser = new Parser();
-    }
-
-    async connect(options: SerialPortOptions): Promise<void> {
-        assert(options.path, "BLZ serial port path is required");
-        if (isTcpPath(options.path)) {
-            await this.openSocketPort(options.path);
-        } else {
-            await this.openSerialPort(options.path, options.baudRate ?? 2000000, options.rtscts ?? false);
-        }
-    }
-
-    private async openSerialPort(path: string, baudRate: number, rtscts: boolean): Promise<void> {
-        const options = {
-            path,
-            baudRate: typeof baudRate === "number" ? baudRate : 2000000,
-            rtscts: typeof rtscts === "boolean" ? rtscts : false,
-            autoOpen: false,
-            parity: "none",
-            stopBits: 1,
-            xon: false,
-            xoff: false,
-        };
-
-        logger.debug(`Opening SerialPort with ${JSON.stringify(options)}`, NS);
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-expect-error
-        this.serialPort = new SerialPort(options);
-
-        this.writer.pipe(this.serialPort);
-
-        this.serialPort.pipe(this.parser);
+        this.writer.on("data", this.onWriterData);
         this.parser.on("parsed", this.onParsed.bind(this));
+    }
+
+    /**
+     * The transport is shared by every SerialDriver the adapter creates over its lifetime (the driver builds a new one on each
+     * reset), so listeners are attached on connect and detached on close to keep a stale instance from parsing or ACKing frames.
+     */
+    private attachTransport(): void {
+        this.detachTransport();
+        this.transport.on("data", this.onTransportData);
+        this.transport.on("close", this.onTransportClose);
+    }
+
+    private detachTransport(): void {
+        this.transport.off("data", this.onTransportData);
+        this.transport.off("close", this.onTransportClose);
+    }
+
+    private readonly onTransportData = (chunk: Buffer): void => {
+        this.parser.write(chunk);
+    };
+
+    private readonly onTransportClose = (error?: boolean | Error): void => {
+        logger.debug(`Port closed. Error? ${error}`, NS);
+
+        // the base adapter reports `disconnected` for any unexpected close; an error close also tries a reset
+        if (error != null && error !== false) {
+            this.emit("reset");
+        } else {
+            this.initialized = false;
+        }
+    };
+
+    private readonly onWriterData = (buffer: Buffer): void => {
+        try {
+            this.transport.write(buffer);
+        } catch (error) {
+            logger.error(`Write failed: ${error}`, NS);
+        }
+    };
+
+    async connect(): Promise<void> {
+        assert(this.transport.options.path, "BLZ serial port path is required");
+        this.attachTransport();
 
         try {
-            await this.serialPort.asyncOpen();
-            logger.debug("Serialport opened", NS);
+            // BLZ frames are binary: XON/XOFF bytes in a payload must not be taken as software flow control
+            await this.transport.open(true);
+            logger.debug("Transport opened", NS);
 
-            this.serialPort.once("close", this.onPortClose.bind(this));
-            this.serialPort.on("error", this.onPortError.bind(this));
-
-            // reset
-            // await this.reset();
+            if (!this.transport.isSerial) {
+                await this.reset();
+            }
 
             this.initialized = true;
         } catch (error) {
             this.initialized = false;
-            // Clean up pipes and port on failure to prevent orphaned streams
-            this.writer.unpipe(this.serialPort);
-            this.serialPort.unpipe(this.parser);
-            this.serialPort.destroy();
-            this.serialPort = undefined as unknown as SerialPort;
+            this.detachTransport();
+            await this.transport.close();
             throw error;
         }
-    }
-
-    private async openSocketPort(path: string): Promise<void> {
-        const info = parseTcpPath(path);
-        logger.debug(`Opening TCP socket with ${info.host}:${info.port}`, NS);
-
-        const socketPort = new net.Socket();
-        this.socketPort = socketPort;
-        this.socketPort.setNoDelay(true);
-        this.socketPort.setKeepAlive(true, 15000);
-
-        this.writer.pipe(this.socketPort);
-
-        this.socketPort.pipe(this.parser);
-        this.parser.on("parsed", this.onParsed.bind(this));
-
-        return await new Promise((resolve, reject): void => {
-            const openError = (err: Error): void => {
-                this.initialized = false;
-
-                reject(err);
-            };
-
-            socketPort.on("connect", () => {
-                logger.debug("Socket connected", NS);
-            });
-            socketPort.on("ready", async (): Promise<void> => {
-                logger.debug("Socket ready", NS);
-                socketPort.removeListener("error", openError);
-                socketPort.once("close", this.onPortClose.bind(this));
-                socketPort.on("error", this.onPortError.bind(this));
-
-                // reset
-                await this.reset();
-
-                this.initialized = true;
-
-                resolve();
-            });
-            socketPort.once("error", openError);
-
-            socketPort.connect(info.port, info.host);
-        });
     }
 
     private async onParsed(frame: Frame): Promise<void> {
@@ -237,52 +200,16 @@ export class SerialDriver extends EventEmitter {
         logger.warning(`<-- RST:  ${frame}`, NS);
     }
 
-    public async close(emitClose: boolean): Promise<void> {
+    public async close(): Promise<void> {
         logger.debug("Closing UART", NS);
         this.queue.clear();
         this.waitress.clear();
-        this.parser.removeAllListeners();
         this.parser.reset();
+        this.detachTransport();
 
         if (this.initialized) {
             this.initialized = false;
-
-            if (this.serialPort) {
-                try {
-                    this.writer.unpipe(this.serialPort);
-                    this.serialPort.unpipe(this.parser);
-                    await this.serialPort.asyncFlushAndClose();
-                } catch (error) {
-                    if (emitClose) {
-                        this.emit("close");
-                    }
-
-                    throw error;
-                }
-            } else if (this.socketPort) {
-                this.writer.unpipe(this.socketPort);
-                this.socketPort.unpipe(this.parser);
-                this.socketPort.destroy();
-            }
-        }
-
-        if (emitClose) {
-            this.emit("close");
-        }
-    }
-
-    private onPortError(error: Error): void {
-        logger.error(`Port error: ${error}`, NS);
-    }
-
-    private onPortClose(err: boolean | Error): void {
-        logger.debug(`Port closed. Error? ${err}`, NS);
-
-        if (err != null && err !== false) {
-            this.emit("reset");
-        } else {
-            this.initialized = false;
-            this.emit("close");
+            await this.transport.close();
         }
     }
 

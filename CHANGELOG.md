@@ -1,5 +1,82 @@
 # Changelog
 
+## [11.2.1](https://github.com/Koenkk/zigbee-herdsman/compare/v11.2.0...v11.2.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* Deconz timeout handling ([#1932](https://github.com/Koenkk/zigbee-herdsman/issues/1932)) ([3c38148](https://github.com/Koenkk/zigbee-herdsman/commit/3c381485485e1c8abe79a30075ab3a31d54f8f01))
+* **ignore:** bump @biomejs/biome from 2.5.12 to 2.6.3 in the minor-patch group ([#1925](https://github.com/Koenkk/zigbee-herdsman/issues/1925)) ([48d47a4](https://github.com/Koenkk/zigbee-herdsman/commit/48d47a40d4849d97461037189bb3548f289b0e56))
+* **ignore:** bump source-map-js from 1.2.1 to 1.2.2 ([#1935](https://github.com/Koenkk/zigbee-herdsman/issues/1935)) ([1db528a](https://github.com/Koenkk/zigbee-herdsman/commit/1db528aeaff00463387e2ec172306d9992f0dab0))
+* **ignore:** bump the minor-patch group with 2 updates ([#1934](https://github.com/Koenkk/zigbee-herdsman/issues/1934)) ([5514149](https://github.com/Koenkk/zigbee-herdsman/commit/55141495a8089d9b9098a65372175a65841ad93a))
+* **ignore:** bump vite from 7.3.6 to 7.3.7 ([#1936](https://github.com/Koenkk/zigbee-herdsman/issues/1936)) ([fa53e2b](https://github.com/Koenkk/zigbee-herdsman/commit/fa53e2bd217d569dfe9c971732c49212379f6e64))
+* Regenerate cluster types to include Tuya `dataReportAlt` ([#1937](https://github.com/Koenkk/zigbee-herdsman/issues/1937)) ([0b85000](https://github.com/Koenkk/zigbee-herdsman/commit/0b8500042853f0c5c75b86416fa3711c1316fb6e))
+* Use ZCL frame type to deconflict matching ([#1930](https://github.com/Koenkk/zigbee-herdsman/issues/1930)) ([75e47fe](https://github.com/Koenkk/zigbee-herdsman/commit/75e47feee0c7cdd5e84b8f364d574b215d7d094e))
+
+## [11.2.0](https://github.com/Koenkk/zigbee-herdsman/compare/v11.1.1...v11.2.0) (2026-10-31)
+
+
+### Features
+
+* Support for SONOFF Dongle-MP10 auto-discovery ([#1920](https://github.com/Koenkk/zigbee-herdsman/issues/1920)) ([6764136](https://github.com/Koenkk/zigbee-herdsman/commit/6764136fdf781db6d965f8fd5b02e166d6b132e5))
+
+
+### Bug Fixes
+
+* Tuya: parse EF00 command 0x0A as `dataReportAlt` ([#1924](https://github.com/Koenkk/zigbee-herdsman/issues/1924)) ([8f5faff](https://github.com/Koenkk/zigbee-herdsman/commit/8f5faffa813ccbefe16b1de88a9832ecfe1ab6bf))
+* Update group database when device is already in the group ([#1923](https://github.com/Koenkk/zigbee-herdsman/issues/1923)) ([b560461](https://github.com/Koenkk/zigbee-herdsman/commit/b560461ed2c5322c60322e1679c278d413efb0b0))
+
+## [11.1.1](https://github.com/Koenkk/zigbee-herdsman/compare/v11.1.0...v11.1.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* **ignore:** bump @types/node from 26.6.4 to 26.6.5 in the minor-patch group ([#1915](https://github.com/Koenkk/zigbee-herdsman/issues/1915)) ([e399aec](https://github.com/Koenkk/zigbee-herdsman/commit/e399aec41602622de6bfe56e5f465fec9c13fdbd))
+* OTA delayed for some devices due to order of operations ([#1918](https://github.com/Koenkk/zigbee-herdsman/issues/1918)) ([cf29e23](https://github.com/Koenkk/zigbee-herdsman/commit/cf29e23a3c0fbfcbad9cb5c6694448381b6f61ba))
+* send default response on unknown ZCL frame ([#1917](https://github.com/Koenkk/zigbee-herdsman/issues/1917)) ([87d1f6b](https://github.com/Koenkk/zigbee-herdsman/commit/87d1f6b68ab95d3ca912731284da80e73447becf))
+
+## [11.1.0](https://github.com/Koenkk/zigbee-herdsman/compare/v11.0.3...v11.1.0) (2026-10-13)
+
+
+### Features
+
+* Add application type and bacnet mappings ([#1912](https://github.com/Koenkk/zigbee-herdsman/issues/1912)) ([2c43c70](https://github.com/Koenkk/zigbee-herdsman/commit/2c43c704ee8b78961083794e5a4d48163e3c8e2d))
+
+## [11.0.3](https://github.com/Koenkk/zigbee-herdsman/compare/v11.0.2...v11.0.3) (2026-10-08)
+
+
+### Bug Fixes
+
+* **ignore:** bump @types/node from 26.5.0 to 26.6.4 in the minor-patch group ([#1904](https://github.com/Koenkk/zigbee-herdsman/issues/1904)) ([609eed8](https://github.com/Koenkk/zigbee-herdsman/commit/609eed84df48b8203fda99faaa7d4e302425fe1b))
+* **ignore:** update zoh to 0.3.2 ([#1907](https://github.com/Koenkk/zigbee-herdsman/issues/1907)) ([e89385f](https://github.com/Koenkk/zigbee-herdsman/commit/e89385f2233c29c45d46f37f02a25b527d9b01d4))
+
+## [11.0.2](https://github.com/Koenkk/zigbee-herdsman/compare/v11.0.1...v11.0.2) (2026-10-07)
+
+
+### Bug Fixes
+
+* deconz decoder context ([#1901](https://github.com/Koenkk/zigbee-herdsman/issues/1901)) ([1a4748e](https://github.com/Koenkk/zigbee-herdsman/commit/1a4748e987fea60c2ccfb836ce5b4e4f308d14da))
+
+## [11.0.1](https://github.com/Koenkk/zigbee-herdsman/compare/v11.0.0...v11.0.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* deconz transport connection ([#1900](https://github.com/Koenkk/zigbee-herdsman/issues/1900)) ([a8ffbbc](https://github.com/Koenkk/zigbee-herdsman/commit/a8ffbbc61c80a3c885c01e0b9f8dfb63ba2befb3))
+* Tuya: mcuOtaBlockDataRequest size is 1 byte ([#1898](https://github.com/Koenkk/zigbee-herdsman/issues/1898)) ([533af4a](https://github.com/Koenkk/zigbee-herdsman/commit/533af4a00b4b9c73fe7df78d345a0e272cef1921))
+
+## [11.0.0](https://github.com/Koenkk/zigbee-herdsman/compare/v10.10.0...v11.0.0) (2026-10-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* unified transport ([#1872](https://github.com/Koenkk/zigbee-herdsman/issues/1872))
+
+### Features
+
+* Accept explicit manufacturer-specific cluster definitions ([#1878](https://github.com/Koenkk/zigbee-herdsman/issues/1878)) ([0349531](https://github.com/Koenkk/zigbee-herdsman/commit/03495312e131c705a7cabc07fd3c403f2ddf7e42))
+* unified transport ([#1872](https://github.com/Koenkk/zigbee-herdsman/issues/1872)) ([7f12fe1](https://github.com/Koenkk/zigbee-herdsman/commit/7f12fe1119243b62f6f4ce88c62f2863e9972553))
+
 ## [10.10.0](https://github.com/Koenkk/zigbee-herdsman/compare/v10.9.6...v10.10.0) (2026-09-30)
 
 

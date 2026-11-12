@@ -10,7 +10,7 @@ import * as Zdo from "../../../zspec/zdo";
 import type * as ZdoTypes from "../../../zspec/zdo/definition/tstypes";
 import Adapter, {type ClusterWaitressMatcher, type ZclWaitressPayload} from "../../adapter";
 import type {ZclPayload} from "../../events";
-import type {AdapterOptions, CoordinatorVersion, NetworkOptions, NetworkParameters, SerialPortOptions, StartResult} from "../../tstype";
+import type {AdapterOptions, CoordinatorVersion, NetworkOptions, NetworkParameters, StartResult, TransportOptions} from "../../tstype";
 import {Driver, type EmberIncomingMessage} from "../driver";
 import {EmberEUI64, EmberStatus} from "../driver/types";
 
@@ -21,23 +21,20 @@ export class EZSPAdapter extends Adapter {
     private waitress: Waitress<ZclWaitressPayload, ClusterWaitressMatcher>;
     private interpanLock: boolean;
     private queue: Queue;
-    private closing: boolean;
 
-    public constructor(networkOptions: NetworkOptions, serialPortOptions: SerialPortOptions, backupPath: string, adapterOptions: AdapterOptions) {
-        super(networkOptions, serialPortOptions, backupPath, adapterOptions);
+    public constructor(networkOptions: NetworkOptions, transportOptions: TransportOptions, backupPath: string, adapterOptions: AdapterOptions) {
+        super(networkOptions, transportOptions, backupPath, adapterOptions);
         this.hasZdoMessageOverhead = true;
         this.manufacturerID = Zcl.ManufacturerCode.SILICON_LABORATORIES;
 
         this.waitress = new Waitress(Adapter.zclWaitressValidator, Adapter.clusterWaitressTimeoutFormatter);
         this.interpanLock = false;
-        this.closing = false;
 
         const concurrent = adapterOptions?.concurrent ? adapterOptions.concurrent : 8;
         logger.debug(`Adapter concurrent: ${concurrent}`, NS);
         this.queue = new Queue(concurrent);
 
-        this.driver = new Driver(this.serialPortOptions, this.networkOptions, backupPath);
-        this.driver.on("close", this.onDriverClose.bind(this));
+        this.driver = new Driver(this.transport, this.networkOptions, backupPath);
         this.driver.on("deviceJoined", this.handleDeviceJoin.bind(this));
         this.driver.on("deviceLeft", this.handleDeviceLeft.bind(this));
         this.driver.on("incomingMessage", this.processMessage.bind(this));
@@ -154,16 +151,7 @@ export class EZSPAdapter extends Adapter {
     }
 
     public async stop(): Promise<void> {
-        this.closing = true;
         await this.driver.stop();
-    }
-
-    public onDriverClose(): void {
-        logger.debug("onDriverClose()", NS);
-
-        if (!this.closing) {
-            this.emit("disconnected");
-        }
     }
 
     public async getCoordinatorIEEE(): Promise<string> {
@@ -372,6 +360,7 @@ export class EZSPAdapter extends Adapter {
             response = this.waitForInternal(
                 networkAddress,
                 endpoint,
+                zclFrame.header.frameControl.frameType,
                 zclFrame.header.transactionSequenceNumber,
                 zclFrame.cluster.ID,
                 command.response,
@@ -382,6 +371,7 @@ export class EZSPAdapter extends Adapter {
             response = this.waitForInternal(
                 networkAddress,
                 endpoint,
+                zclFrame.header.frameControl.frameType, // waitress automatically matches on defaultRsp no matter what
                 zclFrame.header.transactionSequenceNumber,
                 zclFrame.cluster.ID,
                 Zcl.Foundation.defaultRsp.ID,
@@ -544,7 +534,16 @@ export class EZSPAdapter extends Adapter {
             let response: ReturnType<typeof this.waitForInternal> | undefined;
 
             if (!disableResponse && command.response !== undefined) {
-                this.waitForInternal(undefined, 0xfe, undefined, zclFrame.cluster.ID, command.response, undefined, timeout);
+                this.waitForInternal(
+                    undefined,
+                    0xfe,
+                    zclFrame.header.frameControl.frameType,
+                    undefined,
+                    zclFrame.cluster.ID,
+                    command.response,
+                    undefined,
+                    timeout,
+                );
             }
 
             try {
@@ -581,6 +580,7 @@ export class EZSPAdapter extends Adapter {
     private waitForInternal(
         networkAddress: number | undefined,
         endpoint: number,
+        frameType: Zcl.FrameType,
         transactionSequenceNumber: number | undefined,
         clusterId: number,
         commandId: number,
@@ -588,7 +588,7 @@ export class EZSPAdapter extends Adapter {
         timeout: number,
     ): {start: () => {promise: Promise<ZclPayload>}; cancel: () => void} {
         const waiter = this.waitress.waitFor(
-            {address: networkAddress, endpoint, clusterId, commandId, defaultRspCommandId, transactionSequenceNumber},
+            {address: networkAddress, endpoint, frameType, clusterId, commandId, defaultRspCommandId, transactionSequenceNumber},
             timeout,
         );
         const cancel = (): void => this.waitress.remove(waiter.ID);
@@ -598,7 +598,7 @@ export class EZSPAdapter extends Adapter {
     public waitFor(
         networkAddress: number,
         endpoint: number,
-        _frameType: Zcl.FrameType,
+        frameType: Zcl.FrameType,
         _direction: Zcl.Direction,
         transactionSequenceNumber: number | undefined,
         clusterId: number,
@@ -606,7 +606,16 @@ export class EZSPAdapter extends Adapter {
         defaultRspCommandId: number | undefined,
         timeout: number,
     ): {promise: Promise<ZclPayload>; cancel: () => void} {
-        const waiter = this.waitForInternal(networkAddress, endpoint, transactionSequenceNumber, clusterId, commandId, defaultRspCommandId, timeout);
+        const waiter = this.waitForInternal(
+            networkAddress,
+            endpoint,
+            frameType,
+            transactionSequenceNumber,
+            clusterId,
+            commandId,
+            defaultRspCommandId,
+            timeout,
+        );
 
         return {cancel: waiter.cancel, promise: waiter.start().promise};
     }

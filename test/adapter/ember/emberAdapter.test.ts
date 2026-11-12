@@ -48,7 +48,7 @@ import type {
 } from "../../../src/adapter/ember/types";
 import {lowHighBytes} from "../../../src/adapter/ember/utils/math";
 import type {DeviceJoinedPayload, DeviceLeavePayload, ZclPayload} from "../../../src/adapter/events";
-import type {AdapterOptions, NetworkOptions, SerialPortOptions} from "../../../src/adapter/tstype";
+import type {AdapterOptions, NetworkOptions, TransportOptions} from "../../../src/adapter/tstype";
 import type {Backup} from "../../../src/models/backup";
 import type {UnifiedBackupStorage} from "../../../src/models/backup-storage-unified";
 import {logger} from "../../../src/utils/logger";
@@ -57,6 +57,7 @@ import type {Eui64, NodeId, PanId} from "../../../src/zspec/tstypes";
 import * as Zcl from "../../../src/zspec/zcl";
 import * as Zdo from "../../../src/zspec/zdo";
 import type * as ZdoTypes from "../../../src/zspec/zdo/definition/tstypes";
+import {flushPromises} from "../../testUtils";
 
 // https://github.com/jestjs/jest/issues/6028#issuecomment-567669082
 function defuseRejection<T>(promise: Promise<T>) {
@@ -73,11 +74,6 @@ function reverseApsFrame(apsFrame: EmberApsFrame): EmberApsFrame {
     return Object.assign({}, apsFrame, {sourceEndpoint: apsFrame.destinationEndpoint, destinationEndpoint: apsFrame.sourceEndpoint});
 }
 
-async function flushPromises(): Promise<void> {
-    const {setImmediate} = await vi.importActual<typeof import("node:timers")>("node:timers");
-    return new Promise(setImmediate);
-}
-
 const TEMP_PATH = path.resolve("temp");
 const STACK_CONFIG_PATH = path.join(TEMP_PATH, "stack_config.json");
 const DEFAULT_NETWORK_OPTIONS: Readonly<NetworkOptions> = {
@@ -87,7 +83,7 @@ const DEFAULT_NETWORK_OPTIONS: Readonly<NetworkOptions> = {
     networkKey: [72, 97, 39, 230, 92, 72, 101, 148, 64, 225, 250, 214, 195, 31, 105, 71],
     networkKeyDistribute: false,
 };
-const DEFAULT_SERIAL_PORT_OPTIONS: Readonly<SerialPortOptions> = {
+const DEFAULT_SERIAL_PORT_OPTIONS: Readonly<TransportOptions> = {
     baudRate: 115200,
     rtscts: false,
     path: "MOCK",
@@ -3565,12 +3561,35 @@ describe("Ember Adapter Layer", () => {
             const sourceAddress: Eui64 = "0x1122334455aabbcc";
             const groupId: number = ZSpec.BroadcastAddress.SLEEPY;
             const lastHopLqi = 252;
-            // Received Zigbee message from '0x', type 'readResponse', cluster 'genBasic', data '{"zclVersion":3}' from endpoint 1 with groupID 0
-            const messageContents = Buffer.from("1800010000000100000000000000000088776655443322110154466341200", "hex");
+            const touchlinkScanResponse = Zcl.Frame.create(
+                Zcl.FrameType.SPECIFIC,
+                Zcl.Direction.SERVER_TO_CLIENT,
+                false,
+                undefined,
+                0,
+                "scanResponse",
+                Zcl.Clusters.touchlink.ID,
+                {
+                    transactionID: 1,
+                    rssiCorrection: 10,
+                    zigbeeInformation: 5,
+                    touchlinkInformation: 6,
+                    keyBitmask: 12,
+                    responseID: 11,
+                    extendedPanID: "0x0017210104d9cd33",
+                    networkUpdateID: 1,
+                    logicalChannel: 12,
+                    panID: 13,
+                    networkAddress: 5,
+                    numberOfSubDevices: 10,
+                    totalGroupIdentifiers: 5,
+                },
+                {},
+            ).toBuffer();
 
             mockEzspSendRawMessage.mockImplementationOnce(() => {
                 setTimeout(async () => {
-                    mockEzspEmitter.emit("touchlinkMessage", sourcePanId, sourceAddress, groupId, lastHopLqi, messageContents);
+                    mockEzspEmitter.emit("touchlinkMessage", sourcePanId, sourceAddress, groupId, lastHopLqi, touchlinkScanResponse);
                     await flushPromises();
                 }, 300);
 
@@ -3583,9 +3602,9 @@ describe("Ember Adapter Layer", () => {
 
             const payload: ZclPayload = {
                 clusterID: Zcl.Clusters.touchlink.ID,
-                header: Zcl.Header.fromBuffer(messageContents),
+                header: Zcl.Header.fromBuffer(touchlinkScanResponse),
                 address: sourceAddress,
-                data: messageContents,
+                data: touchlinkScanResponse,
                 endpoint: FIXED_ENDPOINTS[0].endpoint,
                 linkquality: lastHopLqi,
                 groupID: groupId,
